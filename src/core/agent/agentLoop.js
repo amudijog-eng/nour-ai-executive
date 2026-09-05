@@ -12,7 +12,7 @@ const toolRegistry = require('../../tools/registry');
 const accessControl = require('../permissions/accessControl');
 const auditService = require('../../security/audit');
 
-const MODEL_NAME = 'gemini-3.5-flash';
+const MODEL_NAME = 'gemini-3.6-flash';
 
 class AgentLoop {
   getApiKey() {
@@ -324,7 +324,7 @@ ${historyText}
 "${cleanText}"` }] }],
             generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
           },
-          { timeout: 15000 }
+          { timeout: 8000 }
         );
 
         const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -360,7 +360,7 @@ ${historyText}
   }
 
   async callGemini(apiKey, systemInstruction, userText) {
-    const models = [MODEL_NAME, 'gemini-3.6-flash', 'gemini-flash-latest'];
+    const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
     for (const m of models) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`;
@@ -368,7 +368,7 @@ ${historyText}
           systemInstruction: { parts: [{ text: systemInstruction }] },
           contents: [{ parts: [{ text: userText }] }],
           generationConfig: { temperature: 0.7 }
-        }, { timeout: 15000 });
+        }, { timeout: 8000 });
 
         const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (text) return text;
