@@ -13,7 +13,8 @@ class ConversationRetrieval {
       { trigger: ['عقد', 'اتفاق', 'توقيع'], synonyms: ['عقد', 'اتفاق', 'توقيع', 'شروط', 'بنود', 'اتفاقية', 'عرض'] },
       { trigger: ['اجتماع', 'موعد', 'لقاء', 'قعدة'], synonyms: ['اجتماع', 'موعد', 'لقاء', 'جلسة', 'الساعة', 'يوم', 'الخميس', 'الجمعة', 'السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء'] },
       { trigger: ['عشا', 'غدا', 'مطعم', 'أكل'], synonyms: ['عشا', 'غدا', 'مطعم', 'نلتقي', 'نطلع', 'سهرة'] },
-      { trigger: ['مشروع', 'شغل', 'تكسي', 'تاكسي', 'سند'], synonyms: ['مشروع', 'شغل', 'تاكسي', 'تطبيق', 'سيارات', 'توصيل', 'رحلات'] }
+      { trigger: ['مشروع', 'شغل', 'تكسي', 'تاكسي', 'سند'], synonyms: ['مشروع', 'شغل', 'تاكسي', 'تطبيق', 'سيارات', 'توصيل', 'رحلات'] },
+      { trigger: ['ابوي', 'أبوي', 'والدي', 'والد', 'ابو احمد', 'أبو أحمد', 'محمد العامودي'], synonyms: ['محمد', 'العامودي', 'الوالد', 'أبو أحمد', 'ابو احمد', 'سيد محمد', '90525996'] }
     ];
 
     for (const group of synonymMap) {
@@ -30,13 +31,14 @@ class ConversationRetrieval {
    */
   searchConversationHistory({ phone = null, query, limit = 15 }) {
     if (!query) return [];
+    const cleanPhone = phone ? String(phone).replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, '').replace(/\D/g, '') : null;
 
     const synonyms = this.getSynonymExpansions(query);
     const seenMessageIds = new Set();
     const matchedMessages = [];
 
     // 1. FTS / Exact query search
-    const primaryMatches = dbService.searchMessagesFts(query, phone, limit);
+    const primaryMatches = dbService.searchMessagesFts(query, cleanPhone, limit);
     for (const m of primaryMatches) {
       if (!seenMessageIds.has(m.id)) {
         seenMessageIds.add(m.id);
@@ -47,7 +49,7 @@ class ConversationRetrieval {
     // 2. Search synonym expansions
     for (const syn of synonyms) {
       if (matchedMessages.length >= limit) break;
-      const synMatches = dbService.searchMessagesFts(syn, phone, limit - matchedMessages.length);
+      const synMatches = dbService.searchMessagesFts(syn, cleanPhone, limit - matchedMessages.length);
       for (const m of synMatches) {
         if (!seenMessageIds.has(m.id)) {
           seenMessageIds.add(m.id);

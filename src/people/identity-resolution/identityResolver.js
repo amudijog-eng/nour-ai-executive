@@ -4,7 +4,7 @@ const dbService = require('../../db/database');
 class IdentityResolver {
   normalizePhone(phone) {
     if (!phone) return '';
-    let clean = String(phone).replace(/\D/g, '');
+    let clean = String(phone).replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, '').replace(/\D/g, '');
     if (clean.startsWith('00')) clean = clean.slice(2);
     if (clean.startsWith('07') && clean.length === 10) {
       clean = '962' + clean.slice(1);
@@ -17,6 +17,7 @@ class IdentityResolver {
   normalizeArabic(text) {
     if (!text) return '';
     return text.toLowerCase()
+      .replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, ' ')
       .replace(/[إأآ]/g, 'ا')
       .replace(/ة/g, 'ه')
       .replace(/ى/g, 'ي')
@@ -27,9 +28,10 @@ class IdentityResolver {
 
   async resolve(query) {
     if (!query) return null;
-    const cleanStr = String(query).trim();
+    const cleanStr = String(query).replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, ' ').trim();
     const cleanPhone = this.normalizePhone(cleanStr);
-    const isPhoneLike = /^[0-9+]{7,16}$/.test(cleanStr.replace(/\s/g, ''));
+    const digitsOnly = cleanStr.replace(/\D/g, '');
+    const isPhoneLike = digitsOnly.length >= 7 && digitsOnly.length <= 15;
 
     // 1. Direct Phone Lookup
     if (isPhoneLike && cleanPhone) {

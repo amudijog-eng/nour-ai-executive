@@ -278,11 +278,15 @@ const dbService = {
   },
 
   getMessages: (phone, limit = 50) => {
-    return db.prepare('SELECT * FROM messages WHERE phone = ? ORDER BY id ASC').all(phone);
+    if (!phone) return [];
+    const clean = String(phone).replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, '').replace(/\D/g, '');
+    return db.prepare('SELECT * FROM messages WHERE phone = ? OR phone LIKE ? ORDER BY id ASC LIMIT ?').all(clean, `%${clean.slice(-9)}`, limit);
   },
 
   getRecentContext: (phone, limit = 10) => {
-    const rows = db.prepare('SELECT direction, text FROM messages WHERE phone = ? ORDER BY id DESC LIMIT ?').all(phone, limit);
+    if (!phone) return [];
+    const clean = String(phone).replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, '').replace(/\D/g, '');
+    const rows = db.prepare('SELECT direction, text, created_at FROM messages WHERE phone = ? OR phone LIKE ? ORDER BY id DESC LIMIT ?').all(clean, `%${clean.slice(-9)}`, limit);
     return rows.reverse();
   },
 
@@ -464,6 +468,29 @@ const dbService = {
     if (!exists) {
       db.prepare('INSERT INTO identity_aliases (identity_id, alias, alias_type, source, confidence) VALUES (?, ?, ?, ?, ?)').run(identityId, alias, aliasType, source, confidence);
     }
+  },
+
+  // Relationships
+  addRelationship: ({ from_entity_id, to_entity_id, relation_type, strength = 1.0, notes = '' }) => {
+    const existing = db.prepare('SELECT id FROM relationships WHERE from_entity_id = ? AND to_entity_id = ? AND relation_type = ?').get(from_entity_id, to_entity_id, relation_type);
+    if (existing) {
+      db.prepare('UPDATE relationships SET strength = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(strength, notes, existing.id);
+      return existing.id;
+    }
+    const res = db.prepare(`
+      INSERT INTO relationships (from_entity_id, to_entity_id, relation_type, strength, notes)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(from_entity_id, to_entity_id, relation_type, strength, notes);
+    return res.lastInsertRowid;
+  },
+
+  getRelationships: (entity_id) => {
+    return db.prepare(`
+      SELECT r.*, i.canonical_name, i.phone, i.primary_alias
+      FROM relationships r
+      JOIN identities i ON i.id = (CASE WHEN r.from_entity_id = ? THEN r.to_entity_id ELSE r.from_entity_id END)
+      WHERE r.from_entity_id = ? OR r.to_entity_id = ?
+    `).all(entity_id, entity_id, entity_id);
   },
 
   // Memories
@@ -714,7 +741,98 @@ const dbService = {
     sql += ' ORDER BY id DESC LIMIT ?';
     params.push(limit);
     return db.prepare(sql).all(...params);
+  },
+
+  ensureCoreIdentities: () => {
+    try {
+      // 1. Owner: Ahmad Alamoudi (+962782932611)
+      const ahmad = dbService.upsertIdentity({
+        canonical_name: 'أحمد العامودي',
+        phone: '962782932611',
+        primary_alias: 'الأستاذ أحمد',
+        relationship_type: 'OWNER_DIRECTOR',
+        company: 'سند تاكسي ومكتب الأعمال',
+        confidence: 1.0,
+        notes: 'المالك والمدير الحصري للنظام والمشرف العام وصاحب كافة الصلاحيات التنفيذية'
+      });
+      const ahmadAliases = ['أحمد العامودي', 'احمد العامودي', 'الأستاذ أحمد', 'الاستاذ احمد', 'أبو شهاب', 'ابو شهاب', 'أحمد', 'احمد', 'المدير'];
+      for (const al of ahmadAliases) {
+        dbService.addIdentityAlias(ahmad.id, al, 'title', 'system', 1.0);
+      }
+
+      // 2. Father: Mohamed Alamoudi (+962790525996)
+      const father = dbService.upsertIdentity({
+        canonical_name: 'محمد العامودي',
+        phone: '962790525996',
+        primary_alias: 'والد الأستاذ أحمد',
+        relationship_type: 'FAMILY_FATHER',
+        company: 'عائلة العامودي',
+        confidence: 1.0,
+        notes: 'والد الأستاذ أحمد العامودي (أبو أحمد). له أعلى مكانة واحترام وتقدير، وكافة التفاصيل والرسائل المتعلقة به تعامل بأولوية قصوى وبمنتهى الشفافية واللباقة.'
+      });
+      const fatherAliases = [
+        'محمد العامودي', 'محمد', 'السيد محمد', 'سيد محمد', 'أبو أحمد', 'ابو احمد',
+        'والد أحمد', 'والد احمد', 'والدي', 'ابوي', 'أبوي', 'والد الأستاذ أحمد',
+        'والد الاستاذ احمد', 'عمي أبو أحمد', 'عمي ابو احمد', 'الوالد'
+      ];
+      for (const al of fatherAliases) {
+        dbService.addIdentityAlias(father.id, al, 'family', 'system', 1.0);
+      }
+
+      // Link Relationship between Ahmad and Father
+      dbService.addRelationship({
+        from_entity_id: ahmad.id,
+        to_entity_id: father.id,
+        relation_type: 'FATHER_SON',
+        strength: 1.0,
+        notes: 'والد الأستاذ أحمد العامودي'
+      });
+
+      // Core Memories for Father
+      const existingFatherMem = db.prepare('SELECT id FROM memories WHERE entity_phone LIKE ?').get('%90525996');
+      if (!existingFatherMem) {
+        dbService.addMemory({
+          entity_phone: '962790525996',
+          entity_name: 'محمد العامودي (والد الأستاذ أحمد)',
+          memory_type: 'long_term',
+          classification: 'owner',
+          content: 'السيد محمد العامودي (+962790525996) هو والد الأستاذ أحمد العامودي (أبو أحمد). له مكانة عليا وخاصة جداً، ويُخاطب بلقب عمي أبو أحمد أو سيد محمد. أي تواصل معه أو استفسار عنه من الأستاذ أحمد يجب تلخيصه وشرحه بدقة وأدب.',
+          evidence_source: 'system_core_family',
+          confidence: 1.0
+        });
+
+        dbService.addMemory({
+          entity_phone: '962790525996',
+          entity_name: 'محمد العامودي (والد الأستاذ أحمد)',
+          memory_type: 'episodic',
+          classification: 'owner',
+          content: 'تم إرسال رسالة ترحيبية وتنسيقية سابقة للسيد محمد عبر واتساب من قِبل نور بتاريخ 4/9 نصها: "مرحبا سيد محمد , انا نور سكرتيرة السيد احمد العامودي , مدعومة بنظام الذكاء الاصطناعي... بنعتذر عن التاخير يلي صار لحضرتك... عندي مخ وعندي اكسس ع سستم وعندي كل الديتلز...".',
+          evidence_source: 'WhatsApp message archive id:113',
+          confidence: 1.0
+        });
+      }
+
+      // 3. Khaled Salameh (+962791112233)
+      const khaled = dbService.upsertIdentity({
+        canonical_name: 'خالد سلامة',
+        phone: '962791112233',
+        primary_alias: 'أبو وليد',
+        relationship_type: 'عميل / معرفة شخصية وشريك',
+        company: 'شركة الأمل / مجموعة التميز',
+        confidence: 0.98,
+        notes: 'معرفة شخصية وشريك أعمال مقرب للأستاذ أحمد، يفضل التنسيق المسبق ويفضل واتساب والمواعيد المسائية'
+      });
+      const khaledAliases = ['خالد سلامة', 'خالد سلامه', 'أبو وليد', 'ابو وليد', 'خالد'];
+      for (const al of khaledAliases) {
+        dbService.addIdentityAlias(khaled.id, al, 'nickname', 'system', 0.98);
+      }
+    } catch (e) {
+      console.warn('⚠️ [ensureCoreIdentities error]:', e.message);
+    }
   }
 };
+
+// Auto-seed core identities on initialization
+dbService.ensureCoreIdentities();
 
 module.exports = dbService;
