@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: nour-ai-executive
+    env: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: PORT
+        value: 10000
+      - key: META_VERIFY_TOKEN
+        value: whatsapp_secret_agent_2026
+      - key: META_PHONE_NUMBER_ID
+        value: "1343117632210381"
+      - key: META_WABA_ID
+        value: "541305582400856"
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_APP_ID
+        value: "8385584388183939"
+      - key: META_APP_SECRET
+        sync: false
+      - key: AI_PROVIDER
+        value: gemini
+      - key: AI_API_KEY
+        sync: false

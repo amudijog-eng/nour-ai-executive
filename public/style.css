@@ -1,0 +1,90 @@
+/* WhatsApp Web Professional Dark Theme Styles */
+:root {
+  --wa-bg-dark: #0c1317;
+  --wa-panel-bg: #111b21;
+  --wa-chat-bg: #0b141a;
+  --wa-header-bg: #202c33;
+  --wa-search-bg: #202c33;
+  --wa-border: #222d34;
+  --wa-green: #00a884;
+  --wa-green-hover: #06cf9c;
+  --wa-outgoing-bubble: #005c4b;
+  --wa-incoming-bubble: #202c33;
+  --wa-text-primary: #e9edef;
+  --wa-text-secondary: #8696a0;
+  --wa-blue-ticks: #53bdeb;
+  --wa-active-chat: #2a3942;
+}
+
+body {
+  background-color: var(--wa-bg-dark);
+  color: var(--wa-text-primary);
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Cairo', Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+}
+
+/* Custom WhatsApp Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(134, 150, 160, 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(134, 150, 160, 0.4);
+}
+
+/* WhatsApp Doodle Wallpaper Pattern */
+.wa-chat-wallpaper {
+  background-color: var(--wa-chat-bg);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+                    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: 0 0, 14px 14px;
+}
+
+/* WhatsApp Bubble Shapes */
+.wa-bubble-in {
+  background-color: var(--wa-incoming-bubble);
+  border-radius: 8px 8px 8px 0px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+}
+
+.wa-bubble-out {
+  background-color: var(--wa-outgoing-bubble);
+  border-radius: 8px 8px 0px 8px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+}
+
+/* Active chat item */
+.wa-chat-item.active {
+  background-color: var(--wa-active-chat);
+}
+
+/* Ticket Badge */
+.ticket-badge {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+/* Smooth Fade In */
+@keyframes bubbleFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-msg {
+  animation: bubbleFade 0.18s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}

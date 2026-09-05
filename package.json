@@ -1,0 +1,33 @@
+{
+  "name": "whatsapp-ai-secretary",
+  "version": "1.0.0",
+  "description": "WhatsApp Meta Cloud API integration with AI Secretary Agent and Live Web Dashboard",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "server": "node src/server.js",
+    "ai": "node src/ai-engine/antigravity-cli.js",
+    "simulate": "node test-simulator.js",
+    "dev": "node start-all.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "meta-api",
+    "ai-agent",
+    "chatbot",
+    "secretary",
+    "dashboard"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
