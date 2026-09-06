@@ -44,5 +44,12 @@ module.exports = {
 
   async getActiveForPhone({ phone }) {
     return dbService.getActiveLifecycleTaskForPhone(phone);
+  },
+
+  // Lazy-required to avoid a circular require: taskEngine.js requires the
+  // tool registry, and the tool registry requires this file.
+  async startOrder({ instruction, targetPhone, targetName = 'المطعم', orderDetails, ownerPhone = '962782932611' }) {
+    const taskEngine = require('../../tasks/engine/taskEngine');
+    return taskEngine.startOrderTask({ instruction, targetPhone, targetName, orderDetails, ownerPhone });
   }
 };

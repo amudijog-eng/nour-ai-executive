@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const dbService = require('../db/database');
 const metaService = require('../services/metaService');
-const agentBrain = require('../ai-engine/agentBrain');
+// Nour's conversational AI agent is disabled: this system is now a send-only
+// WhatsApp OTP service for the Sanad Taxi app. Incoming messages are logged
+// only, no auto-reply is generated. (See src/ai-engine/agentBrain.js and
+// src/core/agent/agentLoop.js if this ever needs to be reactivated.)
 
 const AHMAD_PHONE = '962782932611';
 
@@ -102,90 +105,9 @@ module.exports = (io) => {
       // Mark as read on Meta
       metaService.markAsRead(messageId).catch(() => {});
 
-      // 2. Dispatch message to the Autonomous Agent Brain
-      const isAhmad = (fromPhone === AHMAD_PHONE.replace(/\D/g, ''));
-      console.log(`🧠 [Agent Brain Engine] Processing incoming message from ${fromPhone} (isAhmad: ${isAhmad})...`);
-
-      const agentResult = await agentBrain.processIncomingMessage({
-        fromPhone,
-        senderName,
-        text,
-        isAdmin: isAhmad
-      });
-
-      if (!agentResult) return;
-
-      // Helper function to send and persist outgoing message
-      const sendAndSave = async (toPhone, msgText, emitEvent = null, extraPayload = {}) => {
-        if (!toPhone || !msgText) return null;
-        console.log(`📤 [Sending WhatsApp] To ${toPhone}: "${msgText.slice(0, 50)}..."`);
-        try {
-          const sendRes = await metaService.sendTextMessage(toPhone, msgText);
-          const saved = dbService.saveMessage({
-            messageId: sendRes?.messageId || 'out_' + Date.now(),
-            phone: toPhone,
-            direction: 'outgoing',
-            text: msgText,
-            type: 'text',
-            status: 'sent'
-          });
-          io.emit('new_message', {
-            contact: dbService.getContact(toPhone),
-            message: saved
-          });
-          if (emitEvent) {
-            io.emit(emitEvent, extraPayload);
-          }
-          return saved;
-        } catch (err) {
-          console.error(`❌ [Failed to send WhatsApp] To ${toPhone}:`, err.message);
-          return null;
-        }
-      };
-
-      // Case A: Ahmad Initiated an Outbound Task (e.g. Asking Khaled Salameh for dinner)
-      if (agentResult.action === 'ADMIN_TASK_INITIATED') {
-        // 1. Dispatch message to the target contact (Khaled)
-        await sendAndSave(agentResult.targetPhone, agentResult.messageToTarget, 'task_created', { task: agentResult.task });
-        // 2. Confirm to Ahmad
-        await sendAndSave(fromPhone || AHMAD_PHONE, agentResult.replyToAhmad);
-        return;
-      }
-
-      // Case B: Ahmad forwarded a reply to a support ticket
-      if (agentResult.action === 'ADMIN_FORWARD_REPLY') {
-        await sendAndSave(agentResult.targetCustomerPhone, agentResult.messageToCustomer);
-        await sendAndSave(fromPhone || AHMAD_PHONE, agentResult.replyToAhmad, 'ticket_updated', { ticketNumber: agentResult.ticketNumber });
-        return;
-      }
-
-      // Case C: Any other interaction from Ahmad (Direct reply, chat, task feedback, CRM)
-      if (isAhmad || agentResult.replyToAhmad) {
-        if (agentResult.replyToAhmad) {
-          await sendAndSave(fromPhone || AHMAD_PHONE, agentResult.replyToAhmad);
-        }
-        return;
-      }
-
-      // Case D: Target contact replied to an active task (e.g. Khaled Salameh responded)
-      if (agentResult.action === 'TASK_REPLY_HANDLED') {
-        // 1. Reply acknowledging to target
-        await sendAndSave(fromPhone, agentResult.replyToCustomer);
-        // 2. Send instant alert card to Ahmad
-        await sendAndSave(AHMAD_PHONE, agentResult.adminNotification, 'task_updated', { task: agentResult.task });
-        return;
-      }
-
-      // Case E: Customer normal dialogue
-      if (agentResult.replyToCustomer) {
-        await sendAndSave(fromPhone, agentResult.replyToCustomer);
-      }
-
-      // Case F: Security alert or ticket dispatch to Ahmad
-      if (agentResult.adminNotification) {
-        console.log(`🔔 [Dispatching Notification to Ahmad (+962782932611)]`);
-        await sendAndSave(AHMAD_PHONE, agentResult.adminNotification, agentResult.ticket ? 'ticket_created' : 'admin_alert', { ticket: agentResult.ticket });
-      }
+      // Nour's AI agent no longer processes or replies to incoming messages.
+      // This service only sends outbound OTP codes (see src/routes/otpRoutes.js);
+      // incoming messages are simply logged above for the dashboard to display.
 
     } catch (err) {
       console.error('[Webhook Processing Error]:', err);

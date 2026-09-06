@@ -52,14 +52,14 @@ class AgentLoop {
       };
     }
 
-    // Case B: Check if fromPhone is replying to an active task (e.g. Khaled Salameh responding to invite)
+    // Case B: Check if fromPhone is replying to an active task (Restaurant, Client, Vendor)
     const activeTask = dbService.getActiveLifecycleTaskForPhone(fromPhone);
     if (activeTask && auth.role !== 'OWNER') {
       console.log(`🎯 [Active Task Reply] Phone ${fromPhone} replying to task ${activeTask.task_code}: "${cleanText}"`);
-      const taskResult = await taskEngine.handleTargetReply(activeTask, cleanText, fromPhone);
+      const taskResult = await taskEngine.handleTargetReply(activeTask, cleanText, fromPhone, apiKey);
       return {
         action: 'TASK_REPLY_HANDLED',
-        replyToCustomer: taskResult.replyToTarget,
+        replyToCustomer: taskResult.replyToCustomer,
         adminNotification: taskResult.alertToAhmad,
         task: activeTask
       };
@@ -74,9 +74,6 @@ class AgentLoop {
     return this.handleExternalClient(fromPhone, senderName, cleanText, apiKey);
   }
 
-  /**
-   * Executive Handler for Ahmad Alamoudi
-   */
   extractPhones(text) {
     if (!text) return [];
     const clean = text.replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, ' ');
@@ -100,6 +97,17 @@ class AgentLoop {
    */
   async handleOwnerInstruction(cleanText, apiKey) {
     console.log(`👑 [Executive Agent Loop] Ahmad: "${cleanText}"`);
+
+    // 0. Check if Ahmad is answering a pending decision/consultation for an active task
+    const pendingTask = dbService.getActiveTaskAwaitingOwnerDecision();
+    if (pendingTask) {
+      console.log(`👑 [Ahmad Decision] Answering pending task ${pendingTask.task_code}: "${cleanText}"`);
+      const decisionResult = await taskEngine.handleAhmadDecisionForTask(pendingTask, cleanText, apiKey);
+      return {
+        action: 'ADMIN_REPLY',
+        replyToAhmad: decisionResult.confirmToAhmad
+      };
+    }
 
     // 1. Check if Ahmad is answering a support ticket (#TK-XXXX [الرد])
     const ticketMatch = cleanText.match(/(?:#)?(TK-\d{4})/i);
@@ -125,262 +133,138 @@ class AgentLoop {
       }
     }
 
-    // 2. Check for Direct WhatsApp Dispatch ("ابعتي رسالة لرقم 079... احكيله كذا")
-    const directSendMatch = cleanText.match(/(?:ابعتي|ابعثي|ابعت|ابعث|ارسل|ارسلي|رسالة|مسج)\s+(?:رسالة\s+)?(?:لـ?لرقم|لـ?رقم|لـ?)\s*([0-9+\s\-]{9,18})[:\s]+(?:احكيله|احكي له|قله|قل له|نصها)?[:\s]*(.*)$/iu);
-    if (directSendMatch) {
-      let targetRawPhone = authentication.normalizePhone(directSendMatch[1]);
-      let msgToSend = directSendMatch[2].trim();
+    // 2. Everything else goes through the agentic tool-calling loop: Nour
+    // decides which registered tool(s) to call (send WhatsApp messages,
+    // start orders, save facts, manage tasks/calendar, look people up)
+    // instead of being limited to a fixed list of anticipated phrasings.
+    const reply = await this.runAgenticToolLoop({ cleanText, apiKey });
+    return { action: 'ADMIN_REPLY', replyToAhmad: reply };
+  }
 
-      if (msgToSend) {
-        try {
-          await toolRegistry.execute('whatsapp.send', {
-            toPhone: targetRawPhone,
-            messageText: msgToSend,
-            reason: 'Direct command from Ahmad'
-          });
-          return {
-            action: 'ADMIN_REPLY',
-            replyToAhmad: `أبشر أستاذ أحمد، من عيوني! بعثت الرسالة فوراً للرقم (${targetRawPhone}):
-"${msgToSend}" 👍`
-          };
-        } catch (e) {
-          return {
-            action: 'ADMIN_REPLY',
-            replyToAhmad: `أستاذ أحمد، حاولت أبعث للرقم (${targetRawPhone}) بس طلع خطأ: ${e.message}`
-          };
-        }
-      }
-    }
+  /**
+   * Converts the tool registry's declarations into Gemini's function-calling format.
+   */
+  buildGeminiTools() {
+    const declarations = toolRegistry.getToolDeclarations();
+    return [{ functionDeclarations: declarations }];
+  }
 
-    // 3. Dynamic Fact & Relationship Learner (Ahmad teaching Nour / storing facts)
-    const isLearnIntent = /(?:احفظ|احفظي|سجل|سجلي|تذكر|تذكري|خلي ببالك|بدي تعرف|بدي ياكي تعرفي|لا تنسى|لا تنسي|معلومة مهمة)/iu.test(cleanText) ||
-                          /(?:ابوي هو|ابوي اسمه|رقم ابوي|اخوي اسمه|رقم اخوي|امي اسمها|رقم امي|شريكي هو|صاحبي هو|زبوني هو)/iu.test(cleanText);
-    if (isLearnIntent && apiKey) {
+  /**
+   * Same model-fallback pattern as callGemini/callGeminiJson, but attaches
+   * tool declarations and returns the raw candidate content so the caller
+   * can inspect functionCall parts vs plain text parts.
+   */
+  async callGeminiWithTools(apiKey, systemInstruction, contents, tools) {
+    const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+    for (const m of models) {
       try {
-        const learnPrompt = `
-أنتِ العقل الداخلي للسكرتيرة نور. الأستاذ أحمد يعلمك أو يطلب منكِ حفظ معلومة جديدة أو رقم شخص أو علاقة.
-حللي النص التالي واستخرجي البيانات بصيغة JSON فقط:
-{
-  "personName": "اسم الشخص إن وجد أو فارغ",
-  "personPhone": "رقم الهاتف إن وجد أو فارغ",
-  "relation": "نوع العلاقة (FAMILY_FATHER, FAMILY_BROTHER, PARTNER, CLIENT, VIP, GENERAL)",
-  "fact": "الحقيقة أو المعلومة المطلوب حفظها بدقة",
-  "aliases": ["أي ألقاب أو أسماء مرادفة له"],
-  "confirmation": "رسالة تأكيد لطيفة ومحترمة للأستاذ أحمد باللهجة الأردنية بأنه تم حفظ المعلومة بالذاكرة الدائمة"
-}
-`;
-        const learned = await this.callGeminiJson(apiKey, learnPrompt, cleanText);
-        if (learned && (learned.fact || learned.personName)) {
-          let cleanLearnedPhone = learned.personPhone ? authentication.normalizePhone(learned.personPhone) : null;
-          if (!cleanLearnedPhone) {
-            const ext = this.extractPhones(cleanText);
-            if (ext.length > 0) cleanLearnedPhone = ext[0];
-          }
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`;
+        const res = await axios.post(url, {
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents,
+          tools,
+          generationConfig: { temperature: 0.4 }
+        }, { timeout: 20000 });
 
-          let identityId = null;
-          if (learned.personName && cleanLearnedPhone) {
-            const iden = dbService.upsertIdentity({
-              canonical_name: learned.personName,
-              phone: cleanLearnedPhone,
-              primary_alias: learned.aliases?.[0] || learned.personName,
-              relationship_type: learned.relation || 'VIP',
-              company: '',
-              confidence: 1.0,
-              notes: learned.fact || ''
-            });
-            identityId = iden.id;
-            if (Array.isArray(learned.aliases)) {
-              for (const al of learned.aliases) {
-                dbService.addIdentityAlias(identityId, al, 'learned', 'owner_instruction', 1.0);
-              }
-            }
-          }
-
-          await memoryEngine.recordLongTermFact({
-            entityPhone: cleanLearnedPhone,
-            entityName: learned.personName || 'أحمد العامودي',
-            fact: learned.fact || cleanText,
-            source: 'Ahmad direct instruction',
-            confidence: 1.0,
-            classification: 'owner'
-          });
-
-          return {
-            action: 'ADMIN_REPLY',
-            replyToAhmad: learned.confirmation || `أبشر أستاذ أحمد، سجلت وحفظت هاي المعلومة عندي بالذاكرة الدائمة 🌸`
-          };
-        }
+        const candidate = res.data?.candidates?.[0];
+        if (candidate?.content) return candidate.content;
       } catch (e) {
-        console.warn('Learning Engine Error:', e.message);
+        console.warn(`⚠️ Gemini tool-call model ${m} failed:`, e.response?.data?.error?.message || e.message);
       }
     }
+    return null;
+  }
 
-    // 4. Person, Phone Number, Conversation History, or Family Inquiry (Father / VIPs / History)
-    const extractedPhones = this.extractPhones(cleanText);
-    const mentionsFather = /(?:ابوي|أبوي|والدي|الوالد|ابو احمد|أبو أحمد|محمد العامودي)/iu.test(cleanText);
-    const isHistoryOrDossierQuery = /(?:شو في بينك وبين|شو حكيتي|شو انبعث|شو دار|شو المحادثات|شو صار مع|وين وصلنا مع|شو بتعرفي عن|شو حكالي|شو حكى|مين صاحب|مين هاد|مين هذا|محادثات|تفاصيل|تاريخ|سجل)/iu.test(cleanText);
-
-    if (extractedPhones.length > 0 || mentionsFather || isHistoryOrDossierQuery) {
-      let targetPerson = null;
-      let targetPhone = extractedPhones[0] || null;
-
-      if (targetPhone) {
-        targetPerson = await identityResolver.resolve(targetPhone);
-      } else if (mentionsFather) {
-        targetPerson = await identityResolver.resolve('محمد العامودي');
-        targetPhone = targetPerson?.phone || '962790525996';
-      } else {
-        const words = cleanText.split(/\s+/);
-        for (const w of words) {
-          if (w.length >= 3) {
-            const resolved = await identityResolver.resolve(w);
-            if (resolved && resolved.phone && resolved.phone !== authentication.getOwnerPhone()) {
-              targetPerson = resolved;
-              targetPhone = resolved.phone;
-              break;
-            }
-          }
-        }
-      }
-
-      if (targetPhone || targetPerson) {
-        const messages = targetPhone ? dbService.getMessages(targetPhone, 20) : [];
-        const memories = targetPhone ? memoryEngine.getRelevantMemories({ entityPhone: targetPhone, callerClassification: 'owner' }) : [];
-        const activeTask = targetPhone ? dbService.getActiveLifecycleTaskForPhone(targetPhone) : null;
-
-        const messagesText = messages.length > 0 
-          ? messages.map(m => `[${m.created_at}] [${m.direction === 'incoming' ? (targetPerson?.name || 'الطرف الآخر') : 'نور السكرتيرة'}]: ${m.text}`).join('\n')
-          : 'لا توجد أي رسائل سابقة مسجلة في قاعدة البيانات مع هذا الرقم.';
-
-        const memoriesText = memories.length > 0
-          ? memories.map(m => `- [${m.memory_type}]: ${m.content}`).join('\n')
-          : 'لا توجد ذكريات سابقة خاصة مسجلة.';
-
-        const isFatherTarget = mentionsFather || targetPhone === '962790525996' || targetPerson?.relationship === 'FAMILY_FATHER' || targetPerson?.name?.includes('محمد العامودي');
-
-        const systemPrompt = `
-أنتِ "نور"، السكرتيرة التنفيذية الذكية والمخلصة للأستاذ أحمد العامودي.
-يسألك الأستاذ أحمد سؤالاً استفسارياً عن شخص، رقم هاتف، أو تاريخ محادثات سابقة.
-
-بيانات الطرف المستعلم عنه:
-- الاسم / الهوية: ${targetPerson ? `${targetPerson.name} (${targetPerson.aliases?.join(', ') || ''})` : `رقم (+${targetPhone})`}
-- رقم الهاتف: ${targetPhone || 'غير محدد'}
-- العلاقة بالأستاذ أحمد: ${isFatherTarget ? 'والد الأستاذ أحمد العامودي (له أعلى مكانة واحترام)' : (targetPerson?.relationship || 'جهة اتصال')}
-- الملاحظات: ${targetPerson?.notes || 'لا توجد'}
-- مهمة جارية مرتبطة به: ${activeTask ? `${activeTask.goal} (${activeTask.status})` : 'لا توجد مهام جارية'}
-
-الذاكرة والحقائق المسجلة بالنظام:
-${memoriesText}
-
-سجل الرسائل الحقيقي المسترجع من قاعدة البيانات:
-${messagesText}
-
-قواعد الرد للأستاذ أحمد:
-1. ${isFatherTarget ? 'الشخص هو والد الأستاذ أحمد (السيد محمد العامودي / عمي أبو أحمد). تحدثي بمنتهى الاحترام واللباقة والتقدير التام بلهجة أردنية عفوية وراقية تليق بالوالد الفاضل.' : 'أجيبي بلهجة أردنية مهذبة، ذكية، وواضحة.'}
-2. إذا كان هناك رسائل سابقة في السجل أعلاه، اذكري له ما تم إرساله أو استقباله بالتاريخ والمضمون بكل دقة وأمانة، ووضحي إذا ما زلنا بانتظار رده.
-3. إذا لم تكن هناك أي رسائل مسجلة، قولي له بوضوح: ما في أي محادثات سابقة مسجلة عندي مع هذا الرقم، واذكري اسمه إن كان معروفاً لديكِ.
-4. كوني مباشرة ودقيقة ولا تستخدمي أي نصوص آلية أو قوالب خشبية. اعتمدي 100% على السجل والحقائق أعلاه.
-`;
-
-        if (apiKey) {
-          const reply = await this.callGemini(apiKey, systemPrompt, cleanText);
-          if (reply) {
-            return { action: 'ADMIN_REPLY', replyToAhmad: reply };
-          }
-        }
-
-        if (isFatherTarget) {
-          return {
-            action: 'ADMIN_REPLY',
-            replyToAhmad: `يا هلا والله أستاذ أحمد. هاد الرقم للوالد الفاضل (السيد محمد العامودي - عمي أبو أحمد). شيكتلك على السجل وفي رسالة ترحيبية وتنسيقية انبعثتله بتاريخ 4/9 وبانتظار رده، وأي جديد بخصوصه ببلغك فيه أول بأول 🌸`
-          };
-        }
-      }
+  /**
+   * The core agentic reasoning loop for Ahmad's instructions: Nour is given
+   * full context plus the entire tool registry, and iteratively decides
+   * which tools to call (if any) until she produces a final text reply.
+   */
+  async runAgenticToolLoop({ cleanText, apiKey }) {
+    if (!apiKey) {
+      return `أبشر أستاذ أحمد، أنا معك وجاهزة لكل أوامرك 🌸 بس ما في مفتاح API مفعّل حالياً حتى أقدر أفكر وأنفذ طلبك بذكاء.`;
     }
 
-    // 5. Autonomous Task Coordination ("احكي مع خالد بخصوص العشا / الاجتماع", "رتبيلي موعد مع أبو وليد")
-    const isTaskIntent = /(?:احكي مع|شوفي|شوفيلي|شوفلي|رتبلي|رتبيلي|اتواصلي مع|تنسيق|عشا|اجتماع|موعد)/iu.test(cleanText);
-    if (isTaskIntent) {
-      const words = cleanText.split(/\s+/);
-      let targetPerson = null;
+    const identities = dbService.getAllIdentities();
+    const vipNetworkSummary = identities.map(i => `${i.canonical_name} (${i.primary_alias || ''}) [${i.phone}] - ${i.relationship_type}`).join(' | ');
+    const activeTasks = dbService.getAllLifecycleTasks('WAITING_FOR_REPLY');
+    const activeTasksSummary = activeTasks.map(t => `${t.task_code}: ${t.goal} (${t.status})`).join('\n') || 'لا توجد مهام جارية بانتظار الرد.';
+    const upcomingEvents = dbService.getCalendarEvents({ status: 'scheduled', limit: 5 });
+    const memories = dbService.getMemories({ limit: 8 });
+    const memoriesSummary = memories.map(m => `- ${m.content}`).join('\n') || 'لا توجد ذكريات إضافية';
 
-      for (let i = 0; i < words.length; i++) {
-        const phrase = words.slice(i, i + 3).join(' ');
-        const resolved = await identityResolver.resolve(phrase);
-        if (resolved && resolved.phone && resolved.phone !== authentication.getOwnerPhone()) {
-          targetPerson = resolved;
-          break;
-        }
-      }
-
-      if (targetPerson) {
-        let intentType = 'general';
-        const lower = cleanText.toLowerCase();
-        if (lower.includes('عشا') || lower.includes('غدا') || lower.includes('أكل') || lower.includes('مطعم')) {
-          intentType = 'dinner_invite';
-        } else if (lower.includes('اجتماع') || lower.includes('موعد') || lower.includes('لقاء') || lower.includes('جلسة')) {
-          intentType = 'meeting_request';
-        }
-
-        const taskResult = await taskEngine.startTask({
-          instruction: cleanText,
-          targetPerson,
-          intentType,
-          ownerPhone: authentication.getOwnerPhone()
-        });
-
-        return {
-          action: 'ADMIN_REPLY',
-          replyToAhmad: taskResult.confirmToAhmad
-        };
-      }
-    }
-
-    // 6. Deep Executive AI Brain with Gemini 3.6 Flash
-    if (apiKey) {
-      try {
-        const identities = dbService.getAllIdentities();
-        const vipNetworkSummary = identities.map(i => `${i.canonical_name} (${i.primary_alias || ''}) [${i.phone}] - ${i.relationship_type}`).join(' | ');
-        const activeTasks = dbService.getAllLifecycleTasks('WAITING_FOR_REPLY');
-        const upcomingEvents = dbService.getCalendarEvents({ status: 'scheduled', limit: 5 });
-        const memories = dbService.getMemories({ limit: 8 });
-        const memoriesSummary = memories.map(m => `- ${m.content}`).join('\n');
-
-        const executivePrompt = `
+    const systemInstruction = `
 أنتِ "نور"، السكرتيرة التنفيذية والمساعدة الشخصية المخلصة والذكية جداً للأستاذ أحمد العامودي.
-تتحدثين بلهجة أردنية عفوية، لبقة، راقية ومحترمة (يا هلا والله أستاذ أحمد، أبشر، تكرم عينك، من عيوني، ولا يهمك، شو في ببالك ننجز اليوم).
+تتحدثين بلهجة أردنية عفوية، لبقة، راقية ومحترمة (يا هلا والله أستاذ أحمد، أبشر، تكرم عينك، من عيوني، ولا يهمك).
 
 معلومات وسياق المكتب والذاكرة الحالية:
-- شبكة الأشخاص والعائلة والـ CRM:
+- شبكة الأشخاص والـ CRM:
 ${vipNetworkSummary}
-(ملاحظة هامة: السيد محمد العامودي +962790525996 هو والد الأستاذ أحمد، وخالد سلامة +962791112233 هو شريك وعميل مقرب).
 
 - أهم الذكريات والمعلومات المحفوظة:
-${memoriesSummary || 'لا توجد ذكريات إضافية'}
+${memoriesSummary}
 
-- المهام الجارية بانتظار الرد: ${activeTasks.length}.
+- المهام الجارية بانتظار الرد:
+${activeTasksSummary}
+
 - المواعيد القادمة بالتقويم: ${upcomingEvents.length}.
 
-إذا سألك أحمد أي سؤال (استشارة، فكرة، ترتيب، رأي، أسعار، سند تاكسي، عائلة، أشخاص):
-- أجيبي بذكاء وفهم عميق وواقعي بدون أي نسيان لهوية أي شخص.
-- كوني مباشرة ولا تطيلي بلا داعٍ.
-- ممنوع أي قوالب جامدة أو زخارف مثل ━━━━.
+عندك مجموعة أدوات فعلية مسجلة (whatsapp.send، orders.start، tasks.create/update/get/getActiveForPhone،
+calendar.check/create، contacts.resolve، crm.update، people.getDossier، people.remember،
+tickets.reply، memory.search/storeFact، conversation.search/summarizeTopic).
+
+قواعد أساسية:
+1. إذا كان طلب الأستاذ أحمد يتطلب تنفيذ فعلي (إرسال رسالة، طلب أوردر من مطعم، حفظ معلومة، إنشاء موعد،
+   تحديث أو الاستعلام عن مهمة، البحث عن شخص أو تاريخ محادثات)، استخدمي الأداة المناسبة فعلياً بدل ما تكتفي
+   بالكلام عن تنفيذها.
+2. لا تفترضي بيانات ناقصة (رقم هاتف، تفاصيل الطلب) — إذا كانت ناقصة اسأليه عنها مباشرة بدل التخمين.
+3. إذا استدعيت أداة وحصل خطأ أو احتاج الأمر موافقة إضافية، اشرحي له الموقف بوضوح وبلا تعقيد.
+4. بعد تنفيذ الأدوات اللازمة، لخصي له النتيجة بردة نهائية طبيعية باللهجة الأردنية، بدون أي قوالب جامدة
+   أو زخارف مثل ━━━━.
+5. إذا كان الطلب مجرد سؤال أو دردشة عادية، أجيبي مباشرة بذكاء وفهم بشري عميق دون الحاجة لأي أداة.
 `;
 
-        const reply = await this.callGemini(apiKey, executivePrompt, cleanText);
-        if (reply) {
-          return { action: 'ADMIN_REPLY', replyToAhmad: reply };
-        }
-      } catch (e) {
-        console.warn('Gemini Executive Error:', e.message);
+    const contents = [{ role: 'user', parts: [{ text: cleanText }] }];
+    const tools = this.buildGeminiTools();
+    const maxIterations = 6;
+
+    for (let i = 0; i < maxIterations; i++) {
+      const content = await this.callGeminiWithTools(apiKey, systemInstruction, contents, tools);
+      if (!content) break;
+
+      const functionCalls = (content.parts || []).filter(p => p.functionCall);
+      if (functionCalls.length === 0) {
+        const textPart = (content.parts || []).find(p => p.text)?.text;
+        if (textPart) return textPart.trim();
+        break;
       }
+
+      contents.push({ role: 'model', parts: content.parts });
+
+      const responseParts = [];
+      for (const part of functionCalls) {
+        const { name, args } = part.functionCall;
+        try {
+          const result = await toolRegistry.execute(name, args || {}, 'OWNER');
+
+          if (result.status === 'APPROVAL_REQUIRED') {
+            return `أستاذ أحمد، قبل ما أنفذ هاد الإجراء (${name}) حابة آخذ موافقتك الصريحة: ${result.reason}`;
+          }
+
+          responseParts.push({
+            functionResponse: { name, response: { result: result.result } }
+          });
+        } catch (e) {
+          responseParts.push({
+            functionResponse: { name, response: { error: e.message } }
+          });
+        }
+      }
+
+      contents.push({ role: 'function', parts: responseParts });
     }
 
-    // Fallback
-    return {
-      action: 'ADMIN_REPLY',
-      replyToAhmad: `أبشر أستاذ أحمد، أنا معك وجاهزة لكل أوامرك 🌸 شو بتحب نعمل أو نرتب هسا؟`
-    };
+    return `أبشر أستاذ أحمد، أنا معك وجاهزة لكل أوامرك 🌸 شو بتحب نعمل أو نرتب هسا؟`;
   }
 
   /**
@@ -418,23 +302,8 @@ ${memoriesSummary || 'لا توجد ذكريات إضافية'}
 }
 `;
 
-        const response = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`,
-          {
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ parts: [{ text: `محادثة سابقة:
-${historyText}
-
-رسالة العميل:
-"${cleanText}"` }] }],
-            generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
-          },
-          { timeout: 8000 }
-        );
-
-        const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (raw) {
-          const parsed = JSON.parse(raw);
+        const parsed = await this.callGeminiJson(apiKey, systemPrompt, `محادثة سابقة:\n${historyText}\n\nرسالة العميل:\n"${cleanText}"`);
+        if (parsed) {
           let adminNotification = null;
 
           if (parsed.notifyAdmin) {

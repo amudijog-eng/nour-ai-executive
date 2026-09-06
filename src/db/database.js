@@ -588,7 +588,7 @@ const dbService = {
     const clean = String(phone).replace(/\D/g, '');
     const rows = db.prepare(`
       SELECT * FROM tasks
-      WHERE status IN ('RUNNING', 'WAITING_FOR_REPLY', 'WAITING_FOR_APPROVAL')
+      WHERE status IN ('RUNNING', 'WAITING_FOR_REPLY', 'WAITING_FOR_APPROVAL', 'WAITING_FOR_AHMAD_DECISION')
       ORDER BY id DESC
     `).all();
 
@@ -600,6 +600,17 @@ const dbService = {
       }
     }
     return null;
+  },
+
+  getActiveTaskAwaitingOwnerDecision: (ownerPhone = '962782932611') => {
+    const clean = String(ownerPhone).replace(/\D/g, '');
+    const row = db.prepare(`
+      SELECT * FROM tasks
+      WHERE status = 'WAITING_FOR_AHMAD_DECISION' AND (owner_phone = ? OR owner_phone LIKE ?)
+      ORDER BY id DESC LIMIT 1
+    `).get(clean, `%${clean.slice(-9)}`);
+    if (!row) return null;
+    return dbService.getLifecycleTask(row.task_code);
   },
 
   updateLifecycleTask: (taskCode, updates = {}) => {
@@ -760,57 +771,27 @@ const dbService = {
         dbService.addIdentityAlias(ahmad.id, al, 'title', 'system', 1.0);
       }
 
-      // 2. Father: Mohamed Alamoudi (+962790525996)
-      const father = dbService.upsertIdentity({
-        canonical_name: 'محمد العامودي',
+      // 2. Contact: Mohamed (+962790525996) - standard business contact, NOT father
+      const contactMohamed = dbService.upsertIdentity({
+        canonical_name: 'السيد محمد',
         phone: '962790525996',
-        primary_alias: 'والد الأستاذ أحمد',
-        relationship_type: 'FAMILY_FATHER',
-        company: 'عائلة العامودي',
-        confidence: 1.0,
-        notes: 'والد الأستاذ أحمد العامودي (أبو أحمد). له أعلى مكانة واحترام وتقدير، وكافة التفاصيل والرسائل المتعلقة به تعامل بأولوية قصوى وبمنتهى الشفافية واللباقة.'
+        primary_alias: 'محمد',
+        relationship_type: 'عميل / جهة اتصال',
+        company: '',
+        confidence: 0.9,
+        notes: 'جهة اتصال سابقة تواصلت معها نور لمتابعة الأعمال'
       });
-      const fatherAliases = [
-        'محمد العامودي', 'محمد', 'السيد محمد', 'سيد محمد', 'أبو أحمد', 'ابو احمد',
-        'والد أحمد', 'والد احمد', 'والدي', 'ابوي', 'أبوي', 'والد الأستاذ أحمد',
-        'والد الاستاذ احمد', 'عمي أبو أحمد', 'عمي ابو احمد', 'الوالد'
-      ];
-      for (const al of fatherAliases) {
-        dbService.addIdentityAlias(father.id, al, 'family', 'system', 1.0);
+      const mohamedAliases = ['السيد محمد', 'سيد محمد', 'محمد'];
+      for (const al of mohamedAliases) {
+        dbService.addIdentityAlias(contactMohamed.id, al, 'contact', 'system', 0.9);
       }
 
-      // Link Relationship between Ahmad and Father
-      dbService.addRelationship({
-        from_entity_id: ahmad.id,
-        to_entity_id: father.id,
-        relation_type: 'FATHER_SON',
-        strength: 1.0,
-        notes: 'والد الأستاذ أحمد العامودي'
-      });
-
-      // Core Memories for Father
-      const existingFatherMem = db.prepare('SELECT id FROM memories WHERE entity_phone LIKE ?').get('%90525996');
-      if (!existingFatherMem) {
-        dbService.addMemory({
-          entity_phone: '962790525996',
-          entity_name: 'محمد العامودي (والد الأستاذ أحمد)',
-          memory_type: 'long_term',
-          classification: 'owner',
-          content: 'السيد محمد العامودي (+962790525996) هو والد الأستاذ أحمد العامودي (أبو أحمد). له مكانة عليا وخاصة جداً، ويُخاطب بلقب عمي أبو أحمد أو سيد محمد. أي تواصل معه أو استفسار عنه من الأستاذ أحمد يجب تلخيصه وشرحه بدقة وأدب.',
-          evidence_source: 'system_core_family',
-          confidence: 1.0
-        });
-
-        dbService.addMemory({
-          entity_phone: '962790525996',
-          entity_name: 'محمد العامودي (والد الأستاذ أحمد)',
-          memory_type: 'episodic',
-          classification: 'owner',
-          content: 'تم إرسال رسالة ترحيبية وتنسيقية سابقة للسيد محمد عبر واتساب من قِبل نور بتاريخ 4/9 نصها: "مرحبا سيد محمد , انا نور سكرتيرة السيد احمد العامودي , مدعومة بنظام الذكاء الاصطناعي... بنعتذر عن التاخير يلي صار لحضرتك... عندي مخ وعندي اكسس ع سستم وعندي كل الديتلز...".',
-          evidence_source: 'WhatsApp message archive id:113',
-          confidence: 1.0
-        });
-      }
+      // Cleanup any previous incorrect father links or aliases for 90525996
+      try {
+        db.prepare("DELETE FROM relationships WHERE relation_type = 'FATHER_SON' AND (to_entity_id = ? OR from_entity_id = ?)").run(contactMohamed.id, contactMohamed.id);
+        db.prepare("DELETE FROM identity_aliases WHERE (alias LIKE '%العامودي%' OR alias IN ('ابوي', 'أبوي', 'والدي', 'الوالد', 'والد أحمد', 'والد احمد', 'والد الأستاذ أحمد', 'والد الاستاذ احمد', 'أبو أحمد', 'ابو احمد', 'عمي أبو أحمد', 'عمي ابو احمد')) AND identity_id = ?").run(contactMohamed.id);
+        db.prepare("DELETE FROM memories WHERE content LIKE '%هو والد الأستاذ أحمد%'").run();
+      } catch (_) {}
 
       // 3. Khaled Salameh (+962791112233)
       const khaled = dbService.upsertIdentity({

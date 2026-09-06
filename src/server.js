@@ -35,9 +35,11 @@ io.on('connection', (socket) => {
 // Mount Routes
 const webhookRoutes = require('./routes/webhook')(io);
 const apiRoutes = require('./routes/api')(io);
+const otpRoutes = require('./routes/otpRoutes');
 
 app.use('/webhook', webhookRoutes);
 app.use('/api', apiRoutes);
+app.use('/api/otp', otpRoutes);
 
 // Fallback for Single Page App
 app.get('*', (req, res) => {
@@ -48,12 +50,13 @@ app.get('*', (req, res) => {
 server.listen(PORT, () => {
   console.log(`
 =====================================================
-🚀 سيرفر واتساب والسكرتيرة الذكية يعمل بنجاح!
+🚀 سيرفر Sanad Taxi OTP عبر واتساب يعمل بنجاح!
 -----------------------------------------------------
-🌐 واجهة التحكم (Dashboard): http://localhost:${PORT}
-🔗 نقطة الـ Webhook لميتا:   http://localhost:${PORT}/webhook
-⚙️  نظام قاعدة البيانات:      SQLite (محلي مدمج)
-🤖 وضع السكرتيرة الذكية:     مفعّل
+🌐 واجهة التحكم (Dashboard):   http://localhost:${PORT}
+📲 نقطة إرسال رمز التحقق:      POST http://localhost:${PORT}/api/otp/send
+🔗 نقطة الـ Webhook لميتا:      http://localhost:${PORT}/webhook
+⚙️  نظام قاعدة البيانات:        SQLite (محلي مدمج)
+🤖 وضع السكرتيرة الذكية (نور):  معطّل (send-only OTP mode)
 =====================================================
   `);
 });
