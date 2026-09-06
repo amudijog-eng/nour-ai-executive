@@ -21,8 +21,10 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static frontend files
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Old Nour dashboard (conversation history, CRM, tickets) is moved off the
+// public root so external partners hitting the base URL never see it. Only
+// someone who knows the /dashboard path can reach it.
+app.use('/dashboard', express.static(path.join(__dirname, '..', 'public')));
 
 // Socket.io Connection
 io.on('connection', (socket) => {
@@ -41,8 +43,13 @@ app.use('/webhook', webhookRoutes);
 app.use('/api', apiRoutes);
 app.use('/api/otp', otpRoutes);
 
-// Fallback for Single Page App
-app.get('*', (req, res) => {
+// Neutral public root — no dashboard/conversation data exposed here
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', service: 'Sanad Taxi OTP API' });
+});
+
+// Fallback for the dashboard SPA only
+app.get('/dashboard/*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
@@ -52,7 +59,7 @@ server.listen(PORT, () => {
 =====================================================
 🚀 سيرفر Sanad Taxi OTP عبر واتساب يعمل بنجاح!
 -----------------------------------------------------
-🌐 واجهة التحكم (Dashboard):   http://localhost:${PORT}
+🌐 واجهة التحكم (Dashboard):   http://localhost:${PORT}/dashboard
 📲 نقطة إرسال رمز التحقق:      POST http://localhost:${PORT}/api/otp/send
 🔗 نقطة الـ Webhook لميتا:      http://localhost:${PORT}/webhook
 ⚙️  نظام قاعدة البيانات:        SQLite (محلي مدمج)
