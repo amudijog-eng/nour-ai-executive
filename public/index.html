@@ -723,20 +723,24 @@
             document.getElementById('liveImage').src = '';
         }
 
-        function updateLiveFrame(blob) {
+        function updateLiveFrame(rawBlob) {
+            // Explicitly specify MIME type image/jpeg for raw binary frames from WebSocket
+            const blob = (rawBlob.type === 'image/jpeg') ? rawBlob : new Blob([rawBlob], { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
             const img = document.getElementById('liveImage');
             const placeholder = document.getElementById('streamPlaceholder');
             
-            if (img.src && img.src.startsWith('blob:')) {
-                URL.revokeObjectURL(img.src);
-            }
-            
+            const oldUrl = img.src;
             img.onload = () => {
                 placeholder.style.display = 'none';
                 img.style.display = 'block';
+                if (oldUrl && oldUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(oldUrl);
+                }
             };
-            
+            img.onerror = () => {
+                console.error('Failed to decode JPEG frame');
+            };
             img.src = url;
             
             frameCount++;
