@@ -91,9 +91,16 @@ function handleDeviceConnection(ws) {
                     
                     // Notify dashboards about the new/updated device
                     broadcastDeviceList();
+                } else if (data.type === 'device_log') {
+                    console.log(`[DEVICE LOG] [${data.tag}] ${data.message}`, data.error || '');
+                    for (const [viewerWs, state] of dashboardViewers.entries()) {
+                        if (state.watchedDeviceId === deviceId && viewerWs.readyState === WebSocket.OPEN) {
+                            viewerWs.send(JSON.stringify(data));
+                        }
+                    }
                 }
             } catch (e) {
-                console.error('Error parsing device info:', e);
+                console.error('Error parsing device info/log:', e);
             }
         } else {
             // Binary message: 0x01 = Video frame, 0x02 = Audio chunk, or legacy raw JPEG

