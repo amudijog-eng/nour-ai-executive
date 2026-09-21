@@ -83,12 +83,8 @@ function handleDeviceConnection(ws) {
                     const existing = devices.get(deviceId) || {};
                     devices.set(deviceId, {
                         ...existing,
+                        ...data,
                         id: deviceId,
-                        model: data.model || 'Unknown',
-                        manufacturer: data.manufacturer || 'Unknown',
-                        osVersion: data.osVersion || 'Unknown',
-                        screenWidth: data.screenWidth || 0,
-                        screenHeight: data.screenHeight || 0,
                         status: 'online',
                         lastConnectTime: Date.now()
                     });
