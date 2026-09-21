@@ -823,6 +823,27 @@
             
             frameCount = 0;
             lastFpsTime = Date.now();
+
+            // Load latest logs from server
+            fetch('/api/debug-status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.logs && data.logs.length > 0) {
+                        const logsContainer = document.getElementById('modalDeviceLogs');
+                        if (logsContainer) {
+                            logsContainer.innerHTML = '';
+                            data.logs.forEach(l => {
+                                const time = new Date(l.timestamp || l.receivedAt || Date.now()).toLocaleTimeString();
+                                const line = document.createElement('div');
+                                line.textContent = `[${time}] [${l.tag || 'Device'}] ${l.message} ${l.error ? '⚠️ ' + l.error : ''}`;
+                                if (l.error) line.style.color = '#f87171';
+                                logsContainer.appendChild(line);
+                            });
+                            logsContainer.scrollTop = logsContainer.scrollHeight;
+                        }
+                    }
+                })
+                .catch(() => {});
         }
 
         function populateModalDetails(device) {

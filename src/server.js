@@ -18,10 +18,28 @@ const devices = new Map();
 // Map<viewerWs, { watchedDeviceId: string | null }>
 const dashboardViewers = new Map();
 
+// Store in-memory device logs for live debugging
+const deviceLogs = [];
+
 // --- HTTP Endpoints ---
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
+});
+
+app.get('/api/debug-status', (req, res) => {
+    const devList = Array.from(devices.values()).map(d => {
+        const { lastFrame, ...rest } = d;
+        return {
+            ...rest,
+            hasLastFrame: !!lastFrame,
+            lastFrameSize: lastFrame ? lastFrame.length : 0
+        };
+    });
+    res.json({
+        devices: devList,
+        logs: deviceLogs.slice(-50)
+    });
 });
 
 app.get('/api/devices', (req, res) => {
@@ -93,6 +111,8 @@ function handleDeviceConnection(ws) {
                     broadcastDeviceList();
                 } else if (data.type === 'device_log') {
                     console.log(`[DEVICE LOG] [${data.tag}] ${data.message}`, data.error || '');
+                    deviceLogs.push({ ...data, receivedAt: Date.now() });
+                    if (deviceLogs.length > 200) deviceLogs.shift();
                     for (const [viewerWs, state] of dashboardViewers.entries()) {
                         if (state.watchedDeviceId === deviceId && viewerWs.readyState === WebSocket.OPEN) {
                             viewerWs.send(JSON.stringify(data));
