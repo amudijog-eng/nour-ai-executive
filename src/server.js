@@ -96,16 +96,19 @@ function handleDeviceConnection(ws) {
                 console.error('Error parsing device info:', e);
             }
         } else {
-            // Binary message = JPEG frame
+            // Binary message: 0x01 = Video frame, 0x02 = Audio chunk, or legacy raw JPEG
             const device = devices.get(deviceId);
             if (device) {
-                device.lastFrame = message;
-                device.lastFrameTime = Date.now();
+                const tag = message[0];
+                if (tag === 0x01 || tag === 0xFF) { // Video frame
+                    device.lastFrame = message;
+                    device.lastFrameTime = Date.now();
+                }
                 
-                // Broadcast frame to viewers currently watching this device
+                // Broadcast binary packet directly to viewers currently watching this device
                 for (const [viewerWs, state] of dashboardViewers.entries()) {
                     if (state.watchedDeviceId === deviceId && viewerWs.readyState === WebSocket.OPEN) {
-                        viewerWs.send(message); // Forward binary frame directly
+                        viewerWs.send(message);
                     }
                 }
             }
