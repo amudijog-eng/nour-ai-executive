@@ -9,14 +9,74 @@ const server = http.createServer(app);
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.json());
 
 const fs = require('fs');
 
 // Ensure data directory exists for persistent device storage
 const DATA_DIR = path.join(__dirname, '../data');
 const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
+const RECORDINGS_DIR = path.join(DATA_DIR, 'recordings');
+
 if (!fs.existsSync(DATA_DIR)) {
     try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+}
+if (!fs.existsSync(RECORDINGS_DIR)) {
+    try { fs.mkdirSync(RECORDINGS_DIR, { recursive: true }); } catch (e) {}
+}
+
+// Track DVR frame saving rate (1 snapshot every 2 seconds per device)
+const lastSavedDvrTime = new Map();
+
+function saveDvrFrame(deviceId, frameBuffer) {
+    try {
+        const now = Date.now();
+        const last = lastSavedDvrTime.get(deviceId) || 0;
+        if (now - last < 2000) return; // 1 frame every 2s to conserve disk
+        lastSavedDvrTime.set(deviceId, now);
+
+        const d = new Date(now);
+        const dateStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+        const hourStr = String(d.getHours()).padStart(2, '0');
+        const minStr = String(d.getMinutes()).padStart(2, '0');
+        const secStr = String(d.getSeconds()).padStart(2, '0');
+        const timeStr = `${hourStr}:${minStr}:${secStr}`;
+
+        const devDir = path.join(RECORDINGS_DIR, deviceId, dateStr);
+        if (!fs.existsSync(devDir)) {
+            fs.mkdirSync(devDir, { recursive: true });
+        }
+
+        let jpegData = frameBuffer;
+        if (frameBuffer[0] === 0x01) {
+            jpegData = frameBuffer.subarray(1);
+        }
+
+        const fileName = `${now}.jpg`;
+        const filePath = path.join(devDir, fileName);
+        fs.writeFileSync(filePath, jpegData);
+
+        const indexFile = path.join(devDir, 'index.json');
+        let indexList = [];
+        if (fs.existsSync(indexFile)) {
+            try { indexList = JSON.parse(fs.readFileSync(indexFile, 'utf8')); } catch (_) {}
+        }
+        indexList.push({
+            timestamp: now,
+            time: timeStr,
+            hour: d.getHours(),
+            minute: d.getMinutes(),
+            file: fileName
+        });
+        // Limit to max 1500 frames per day to maintain stable disk space
+        if (indexList.length > 1500) {
+            const old = indexList.shift();
+            try { fs.unlinkSync(path.join(devDir, old.file)); } catch (_) {}
+        }
+        fs.writeFileSync(indexFile, JSON.stringify(indexList));
+    } catch (e) {
+        console.error('[DVR ERROR]', e.message);
+    }
 }
 
 // Store device information and frames
@@ -71,6 +131,84 @@ loadPersistedDevices();
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
+});
+
+app.post('/api/disconnect-report', (req, res) => {
+    const { deviceId, reason, battery, networkType } = req.body;
+    if (deviceId) {
+        let device = devices.get(deviceId);
+        if (!device) {
+            device = { id: deviceId, model: 'Android Device' };
+            devices.set(deviceId, device);
+        }
+        device.status = 'offline';
+        device.disconnectReason = reason || 'إيقاف تشغيل الجهاز';
+        device.batteryAtDisconnect = battery;
+        device.networkAtDisconnect = networkType;
+        device.lastOfflineTime = Date.now();
+        device.lastReportTime = Date.now();
+
+        device.disconnectHistory = device.disconnectHistory || [];
+        device.disconnectHistory.push({
+            reason: device.disconnectReason,
+            battery,
+            networkType,
+            time: Date.now()
+        });
+        if (device.disconnectHistory.length > 20) device.disconnectHistory.shift();
+
+        savePersistedDevices();
+        broadcastDeviceList();
+        console.log(`[DISCONNECT REPORT] Device ${deviceId}: ${reason} (Battery: ${battery}%)`);
+    }
+    res.json({ status: 'ok' });
+});
+
+// DVR API: Get available recording dates for a device
+app.get('/api/recordings/:deviceId', (req, res) => {
+    const { deviceId } = req.params;
+    const devDir = path.join(RECORDINGS_DIR, deviceId);
+    if (!fs.existsSync(devDir)) {
+        return res.json({ dates: [] });
+    }
+    try {
+        const dates = fs.readdirSync(devDir).filter(name => {
+            try { return fs.statSync(path.join(devDir, name)).isDirectory(); } catch (_) { return false; }
+        }).sort().reverse();
+        res.json({ dates });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// DVR API: Get frames timeline for a specific date
+app.get('/api/recordings/:deviceId/:date', (req, res) => {
+    const { deviceId, date } = req.params;
+    const safeDate = path.basename(date);
+    const indexFile = path.join(RECORDINGS_DIR, deviceId, safeDate, 'index.json');
+    if (!fs.existsSync(indexFile)) {
+        return res.json({ date: safeDate, count: 0, frames: [] });
+    }
+    try {
+        const frames = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+        res.json({ date: safeDate, count: frames.length, frames });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// DVR API: Serve specific frame image
+app.get('/api/recordings/:deviceId/:date/:filename', (req, res) => {
+    const { deviceId, date, filename } = req.params;
+    const safeDate = path.basename(date);
+    const safeFile = path.basename(filename);
+    const filePath = path.join(RECORDINGS_DIR, deviceId, safeDate, safeFile);
+    if (fs.existsSync(filePath)) {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.sendFile(filePath);
+    } else {
+        res.status(404).send('Frame not found');
+    }
 });
 
 app.get('/api/debug-status', (req, res) => {
@@ -181,6 +319,27 @@ function handleDeviceConnection(ws) {
                     device.lastPingTime = Date.now();
                     savePersistedDevices();
                     if (shouldBroadcast) broadcastDeviceList();
+                } else if (data.type === 'disconnect_reason') {
+                    deviceId = data.deviceId || deviceId;
+                    let device = devices.get(deviceId);
+                    if (device) {
+                        device.disconnectReason = data.reason;
+                        device.batteryAtDisconnect = data.battery;
+                        device.networkAtDisconnect = data.networkType;
+                        device.lastReportTime = Date.now();
+                        device.status = 'offline';
+                        device.disconnectHistory = device.disconnectHistory || [];
+                        device.disconnectHistory.push({
+                            reason: data.reason,
+                            battery: data.battery,
+                            networkType: data.networkType,
+                            time: Date.now()
+                        });
+                        if (device.disconnectHistory.length > 20) device.disconnectHistory.shift();
+                        savePersistedDevices();
+                        broadcastDeviceList();
+                        console.log(`[DISCONNECT WS] Device ${deviceId}: ${data.reason}`);
+                    }
                 } else if (data.type === 'device_log') {
                     console.log(`[DEVICE LOG] [${data.tag}] ${data.message}`, data.error || '');
                     deviceLogs.push({ ...data, receivedAt: Date.now() });
@@ -218,6 +377,7 @@ function handleDeviceConnection(ws) {
             if (tag === 0x01 || tag === 0xFF) { // Video frame
                 device.lastFrame = message;
                 device.lastFrameTime = Date.now();
+                saveDvrFrame(deviceId, message);
             }
             
             if (shouldBroadcast) {
@@ -239,11 +399,26 @@ function handleDeviceConnection(ws) {
         const device = devices.get(deviceId);
         if (device) {
             device.status = 'offline';
-            device.lastOfflineTime = Date.now();
+            const now = Date.now();
+            if (!device.lastReportTime || (now - device.lastReportTime > 15000)) {
+                if (device.lastPingTime && (now - device.lastPingTime > 40000)) {
+                    device.disconnectReason = "انقطاع شبكة الإنترنت (Wi-Fi / البيانات)";
+                } else {
+                    device.disconnectReason = "إغلاق التطبيق أو توقف مفاجئ للخدمة";
+                }
+            }
+            device.lastOfflineTime = now;
+            device.disconnectHistory = device.disconnectHistory || [];
+            device.disconnectHistory.push({
+                reason: device.disconnectReason,
+                time: now
+            });
+            if (device.disconnectHistory.length > 20) device.disconnectHistory.shift();
+
             savePersistedDevices();
             broadcastDeviceList(); // Notify dashboards that device went offline
+            console.log(`[DEVICE WS] Device disconnected: ${deviceId} (${device.disconnectReason})`);
         }
-        console.log(`[DEVICE WS] Device disconnected: ${deviceId}`);
     });
     
     ws.on('error', (err) => {

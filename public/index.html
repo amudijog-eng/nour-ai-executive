@@ -542,6 +542,23 @@
                     </div>
                 </div>
 
+                <!-- Disconnect Diagnostics (Shown when device is offline) -->
+                <div class="info-section" id="modalDisconnectSection" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35);">
+                    <div class="section-title" style="color: #f87171;">⚠️ تفاصيل وحالة انقطاع الاتصال</div>
+                    <div class="info-row">
+                        <span>سبب الانقطاع:</span>
+                        <span id="modalDisconnectReason" style="font-weight:700; color:#f87171;">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>وقت الانقطاع:</span>
+                        <span id="modalDisconnectTime">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span>البطارية عند الانقطاع:</span>
+                        <span id="modalDisconnectBattery">-</span>
+                    </div>
+                </div>
+
                 <!-- Registered Accounts -->
                 <div class="info-section">
                     <div class="section-title">👤 الحسابات المسجلة على الجهاز</div>
@@ -551,13 +568,33 @@
                 </div>
             </div>
 
-            <!-- Screen Area -->
-            <div class="live-screen-area">
-                <div id="streamPlaceholder" class="screen-placeholder">
-                    <div class="spinner"></div>
-                    <span>جاري استقبال بث الشاشة المباشر من الهاتف...</span>
+            <!-- Screen Area with DVR Controls -->
+            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #000;">
+                <!-- DVR Toolbar -->
+                <div class="dvr-control-bar" style="background: #0f172a; padding: 0.8rem 1.2rem; border-bottom: 1px solid var(--glass-border); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem; z-index: 10;">
+                    <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+                        <span style="font-weight: 800; font-size: 0.95rem; color: #38bdf8;">📼 استرجاع تسجيلات الـ DVR:</span>
+                        <select id="dvrDateSelect" onchange="onDvrDateSelect()" style="background: #1e293b; color: white; border: 1px solid #334155; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer;">
+                            <option value="">اختر تاريخ التسجيل...</option>
+                        </select>
+                        <button id="btnDvrLiveToggle" onclick="switchDvrMode('live')" style="background: #ef4444; color: white; border: none; padding: 0.4rem 0.9rem; border-radius: 6px; font-weight: 700; font-size: 0.85rem; cursor: pointer;">🔴 البث المباشر (Live)</button>
+                    </div>
+                    <div id="dvrPlaybackControls" style="display: none; align-items: center; gap: 0.8rem; flex-grow: 1; max-width: 550px;">
+                        <button id="btnDvrPlay" onclick="toggleDvrPlay()" style="background: #3b82f6; color: white; border: none; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.9rem;">▶</button>
+                        <input type="range" id="dvrSlider" min="0" max="0" value="0" oninput="onDvrScrub(this.value)" style="flex-grow: 1; cursor: pointer; accent-color: #38bdf8;">
+                        <span id="dvrTimeDisplay" style="font-family: monospace; font-size: 0.9rem; color: #38bdf8; font-weight: 700; min-width: 75px;">--:--:--</span>
+                        <button onclick="changeDvrSpeed()" id="btnDvrSpeed" style="background: #334155; color: white; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">1x</button>
+                    </div>
                 </div>
-                <img id="liveImage" src="" alt="بث الشاشة المباشر" style="display: none;">
+
+                <div class="live-screen-area" style="flex: 1; position: relative;">
+                    <div id="streamPlaceholder" class="screen-placeholder">
+                        <div class="spinner"></div>
+                        <span id="streamPlaceholderText">جاري استقبال بث الشاشة المباشر من الهاتف...</span>
+                    </div>
+                    <img id="liveImage" src="" alt="بث الشاشة المباشر" style="display: none;">
+                    <img id="dvrImage" src="" alt="تسجيلات الـ DVR" style="display: none; width: 100%; height: 100%; object-fit: contain;">
+                </div>
             </div>
         </div>
     </div>
@@ -893,6 +930,17 @@
                         </div>
                     </div>
 
+                    ${!isOnline ? `
+                        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.82rem;">
+                            <div style="color: #f87171; font-weight: 700; display: flex; align-items: center; gap: 0.3rem;">
+                                <span>⚠️ سبب الانقطاع:</span>
+                                <span>${escapeHtml(device.disconnectReason || 'انقطاع غير محدد')}</span>
+                            </div>
+                            ${device.batteryAtDisconnect !== undefined ? `<div style="color: #cbd5e1; font-size: 0.75rem; margin-top: 0.2rem;">🔋 نسبة البطارية حينها: ${device.batteryAtDisconnect}%</div>` : ''}
+                            ${device.lastOfflineTime ? `<div style="color: #94a3b8; font-size: 0.75rem; margin-top: 0.2rem;">⏰ وقت الانقطاع: ${new Date(device.lastOfflineTime).toLocaleTimeString()} (${formatTimeAgo(device.lastOfflineTime)})</div>` : ''}
+                        </div>
+                    ` : ''}
+
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
                         <span style="font-size: 0.75rem; color: var(--text-muted);">آخر إطار: ${timeAgo}</span>
                     </div>
@@ -914,7 +962,9 @@
             if (!device) return;
             
             currentWatchedId = deviceId;
+            switchDvrMode('live');
             populateModalDetails(device);
+            fetchDvrDates(deviceId);
             
             // Reset screen view
             document.getElementById('streamPlaceholder').style.display = 'flex';
@@ -982,6 +1032,28 @@
             document.getElementById('modalIp').textContent = device.ipAddress || 'Unknown';
             document.getElementById('modalNetwork').textContent = device.networkType || 'Unknown';
             
+            // Disconnect Diagnostics
+            const disSection = document.getElementById('modalDisconnectSection');
+            if (device.status === 'offline') {
+                disSection.style.display = 'block';
+                document.getElementById('modalDisconnectReason').textContent = device.disconnectReason || 'انقطاع غير محدد';
+                document.getElementById('modalDisconnectTime').textContent = device.lastOfflineTime ? new Date(device.lastOfflineTime).toLocaleString('ar-EG') : 'غير متوفر';
+                document.getElementById('modalDisconnectBattery').textContent = device.batteryAtDisconnect !== undefined ? `${device.batteryAtDisconnect}%` : (device.batteryPercent ? `${device.batteryPercent}%` : 'N/A');
+                
+                if (dvrMode === 'live') {
+                    const placeholderText = document.getElementById('streamPlaceholderText');
+                    if (placeholderText) {
+                        placeholderText.textContent = `الجهاز غير متصل حالياً (${device.disconnectReason || 'انقطاع الاتصال'}) — يمكنك مراجعة تسجيلات الـ DVR السابقة بالأعلى`;
+                    }
+                }
+            } else {
+                disSection.style.display = 'none';
+                if (dvrMode === 'live') {
+                    const placeholderText = document.getElementById('streamPlaceholderText');
+                    if (placeholderText) placeholderText.textContent = 'جاري استقبال بث الشاشة المباشر من الهاتف...';
+                }
+            }
+
             // Accounts
             const accountsContainer = document.getElementById('modalAccountsList');
             accountsContainer.innerHTML = '';
@@ -996,13 +1068,172 @@
             }
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // DVR Recording & Playback Engine
+        // ═══════════════════════════════════════════════════════════════
+        let dvrMode = 'live'; // 'live' or 'dvr'
+        let dvrDates = [];
+        let dvrFrames = [];
+        let dvrPlayTimer = null;
+        let dvrPlaySpeed = 1;
+
+        async function fetchDvrDates(deviceId) {
+            const select = document.getElementById('dvrDateSelect');
+            select.innerHTML = '<option value="">جاري فحص التسجيلات...</option>';
+            try {
+                const res = await fetch(`/api/recordings/${deviceId}`);
+                const data = await res.json();
+                dvrDates = data.dates || [];
+                select.innerHTML = '';
+                if (dvrDates.length === 0) {
+                    select.innerHTML = '<option value="">لا توجد تسجيلات بعد</option>';
+                } else {
+                    select.innerHTML = '<option value="">اختر تاريخ التسجيل للرجوع...</option>';
+                    dvrDates.forEach(date => {
+                        const opt = document.createElement('option');
+                        opt.value = date;
+                        opt.textContent = `📅 تاريخ: ${date}`;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                select.innerHTML = '<option value="">تعذر جلب التواريخ</option>';
+            }
+        }
+
+        async function onDvrDateSelect() {
+            const select = document.getElementById('dvrDateSelect');
+            const date = select.value;
+            if (!date || !currentWatchedId) {
+                switchDvrMode('live');
+                return;
+            }
+
+            switchDvrMode('dvr');
+            document.getElementById('dvrTimeDisplay').textContent = 'جاري التحميل...';
+
+            try {
+                const res = await fetch(`/api/recordings/${currentWatchedId}/${date}`);
+                const data = await res.json();
+                dvrFrames = data.frames || [];
+
+                if (dvrFrames.length === 0) {
+                    alert('لا توجد إطارات مسجلة لهذا التاريخ بعد');
+                    switchDvrMode('live');
+                    return;
+                }
+
+                const slider = document.getElementById('dvrSlider');
+                slider.min = 0;
+                slider.max = dvrFrames.length - 1;
+                slider.value = 0;
+                displayDvrFrame(0);
+            } catch (e) {
+                alert('خطأ في تحميل التسجيلات');
+            }
+        }
+
+        function switchDvrMode(mode) {
+            dvrMode = mode;
+            stopDvrPlay();
+            const liveImg = document.getElementById('liveImage');
+            const dvrImg = document.getElementById('dvrImage');
+            const placeholder = document.getElementById('streamPlaceholder');
+            const dvrControls = document.getElementById('dvrPlaybackControls');
+            const btnLive = document.getElementById('btnDvrLiveToggle');
+
+            if (mode === 'live') {
+                dvrImg.style.display = 'none';
+                dvrControls.style.display = 'none';
+                btnLive.style.background = '#ef4444';
+                btnLive.textContent = '🔴 البث المباشر (Live)';
+                document.getElementById('dvrDateSelect').value = '';
+                if (liveImg.src && liveImg.src !== window.location.href && liveImg.src !== '') {
+                    liveImg.style.display = 'block';
+                    placeholder.style.display = 'none';
+                } else {
+                    placeholder.style.display = 'flex';
+                }
+            } else {
+                liveImg.style.display = 'none';
+                dvrImg.style.display = 'block';
+                placeholder.style.display = 'none';
+                dvrControls.style.display = 'flex';
+                btnLive.style.background = '#475569';
+                btnLive.textContent = 'العودة للمباشر ↩️';
+            }
+        }
+
+        function onDvrScrub(index) {
+            displayDvrFrame(parseInt(index, 10));
+        }
+
+        function displayDvrFrame(index) {
+            if (!dvrFrames || !dvrFrames[index] || !currentWatchedId) return;
+            const frame = dvrFrames[index];
+            const date = document.getElementById('dvrDateSelect').value;
+            const dvrImg = document.getElementById('dvrImage');
+            dvrImg.src = `/api/recordings/${currentWatchedId}/${date}/${frame.file}`;
+            document.getElementById('dvrTimeDisplay').textContent = frame.time || '--:--:--';
+        }
+
+        function toggleDvrPlay() {
+            if (dvrPlayTimer) {
+                stopDvrPlay();
+            } else {
+                startDvrPlay();
+            }
+        }
+
+        function startDvrPlay() {
+            const btn = document.getElementById('btnDvrPlay');
+            btn.textContent = '⏸';
+            btn.style.background = '#ef4444';
+            const slider = document.getElementById('dvrSlider');
+
+            dvrPlayTimer = setInterval(() => {
+                let nextVal = parseInt(slider.value, 10) + 1;
+                if (nextVal > parseInt(slider.max, 10)) {
+                    nextVal = 0; // loop
+                }
+                slider.value = nextVal;
+                displayDvrFrame(nextVal);
+            }, Math.max(200, 1000 / dvrPlaySpeed));
+        }
+
+        function stopDvrPlay() {
+            if (dvrPlayTimer) {
+                clearInterval(dvrPlayTimer);
+                dvrPlayTimer = null;
+            }
+            const btn = document.getElementById('btnDvrPlay');
+            if (btn) {
+                btn.textContent = '▶';
+                btn.style.background = '#3b82f6';
+            }
+        }
+
+        function changeDvrSpeed() {
+            if (dvrPlaySpeed === 1) dvrPlaySpeed = 2;
+            else if (dvrPlaySpeed === 2) dvrPlaySpeed = 4;
+            else dvrPlaySpeed = 1;
+            document.getElementById('btnDvrSpeed').textContent = `${dvrPlaySpeed}x`;
+            if (dvrPlayTimer) {
+                stopDvrPlay();
+                startDvrPlay();
+            }
+        }
+
         function closeLiveView() {
             document.getElementById('liveModal').classList.remove('active');
+            stopDvrPlay();
+            switchDvrMode('live');
             if (ws && ws.readyState === WebSocket.OPEN && currentWatchedId) {
                 ws.send(JSON.stringify({ type: 'unwatch' }));
             }
             currentWatchedId = null;
             document.getElementById('liveImage').src = '';
+            document.getElementById('dvrImage').src = '';
 
             // Reset audio state
             if (isAudioListening) {
