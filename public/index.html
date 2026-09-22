@@ -897,8 +897,8 @@
                         <span style="font-size: 0.75rem; color: var(--text-muted);">آخر إطار: ${timeAgo}</span>
                     </div>
 
-                    <button class="btn-watch" onclick="openLiveView('${device.id}')" ${!isOnline ? 'disabled' : ''}>
-                        <span>📺 عرض شاشة الجهاز والتفاصيل</span>
+                    <button class="btn-watch" onclick="openLiveView('${device.id}')">
+                        <span>${isOnline ? '📺 عرض شاشة الجهاز والتفاصيل' : '🔍 عرض تفاصيل وبيانات الجهاز'}</span>
                     </button>
                 `;
                 grid.appendChild(card);

@@ -10,6 +10,15 @@ const server = http.createServer(app);
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, '../public')));
 
+const fs = require('fs');
+
+// Ensure data directory exists for persistent device storage
+const DATA_DIR = path.join(__dirname, '../data');
+const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
+if (!fs.existsSync(DATA_DIR)) {
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+}
+
 // Store device information and frames
 // Map<deviceId, { id, model, manufacturer, osVersion, screenWidth, screenHeight, status, lastFrameTime, lastFrame }>
 const devices = new Map();
@@ -23,6 +32,40 @@ const deviceSockets = new Map();
 
 // Store in-memory device logs for live debugging
 const deviceLogs = [];
+
+// Load persisted devices from disk on startup so devices don't vanish on server restarts
+function loadPersistedDevices() {
+    try {
+        if (fs.existsSync(DEVICES_FILE)) {
+            const raw = fs.readFileSync(DEVICES_FILE, 'utf8');
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+                for (const d of list) {
+                    // Mark previously saved devices as offline initially until they reconnect/ping
+                    devices.set(d.id, { ...d, status: 'offline' });
+                }
+                console.log(`[STORAGE] Loaded ${list.length} persisted devices from disk`);
+            }
+        }
+    } catch (e) {
+        console.error('[STORAGE] Error loading persisted devices:', e);
+    }
+}
+
+function savePersistedDevices() {
+    try {
+        const list = Array.from(devices.values()).map(d => {
+            const { lastFrame, ...deviceInfo } = d;
+            return deviceInfo;
+        });
+        fs.writeFileSync(DEVICES_FILE, JSON.stringify(list, null, 2), 'utf8');
+    } catch (e) {
+        console.error('[STORAGE] Error saving persisted devices:', e);
+    }
+}
+
+// Initialize persisted devices
+loadPersistedDevices();
 
 // --- HTTP Endpoints ---
 
@@ -93,6 +136,7 @@ function broadcastDeviceList() {
 
 function handleDeviceConnection(ws) {
     let deviceId = uuidv4();
+    console.log('[DEVICE WS] New device connection established');
     
     ws.on('message', (message, isBinary) => {
         if (!isBinary) {
@@ -111,8 +155,32 @@ function handleDeviceConnection(ws) {
                         lastConnectTime: Date.now()
                     });
                     
+                    savePersistedDevices();
                     // Notify dashboards about the new/updated device
                     broadcastDeviceList();
+                    console.log(`[DEVICE WS] Device identified & saved: ${deviceId} (${data.model || 'Unknown'})`);
+                } else if (data.type === 'ping') {
+                    deviceId = data.deviceId || deviceId;
+                    deviceSockets.set(deviceId, ws);
+
+                    let device = devices.get(deviceId);
+                    let shouldBroadcast = false;
+                    if (!device) {
+                        device = {
+                            id: deviceId,
+                            model: 'Honor / Android Device',
+                            status: 'online',
+                            lastConnectTime: Date.now()
+                        };
+                        devices.set(deviceId, device);
+                        shouldBroadcast = true;
+                    } else if (device.status !== 'online') {
+                        device.status = 'online';
+                        shouldBroadcast = true;
+                    }
+                    device.lastPingTime = Date.now();
+                    savePersistedDevices();
+                    if (shouldBroadcast) broadcastDeviceList();
                 } else if (data.type === 'device_log') {
                     console.log(`[DEVICE LOG] [${data.tag}] ${data.message}`, data.error || '');
                     deviceLogs.push({ ...data, receivedAt: Date.now() });
@@ -128,19 +196,39 @@ function handleDeviceConnection(ws) {
             }
         } else {
             // Binary message: 0x01 = Video frame, 0x02 = Audio chunk, or legacy raw JPEG
-            const device = devices.get(deviceId);
-            if (device) {
-                const tag = message[0];
-                if (tag === 0x01 || tag === 0xFF) { // Video frame
-                    device.lastFrame = message;
-                    device.lastFrameTime = Date.now();
-                }
-                
-                // Broadcast binary packet directly to viewers currently watching this device
-                for (const [viewerWs, state] of dashboardViewers.entries()) {
-                    if (state.watchedDeviceId === deviceId && viewerWs.readyState === WebSocket.OPEN) {
-                        viewerWs.send(message);
-                    }
+            let device = devices.get(deviceId);
+            let shouldBroadcast = false;
+
+            if (!device) {
+                device = {
+                    id: deviceId,
+                    model: 'Honor / Android Device',
+                    status: 'online',
+                    lastConnectTime: Date.now()
+                };
+                devices.set(deviceId, device);
+                deviceSockets.set(deviceId, ws);
+                shouldBroadcast = true;
+            } else if (device.status !== 'online') {
+                device.status = 'online';
+                shouldBroadcast = true;
+            }
+
+            const tag = message[0];
+            if (tag === 0x01 || tag === 0xFF) { // Video frame
+                device.lastFrame = message;
+                device.lastFrameTime = Date.now();
+            }
+            
+            if (shouldBroadcast) {
+                savePersistedDevices();
+                broadcastDeviceList();
+            }
+
+            // Broadcast binary packet directly to viewers currently watching this device
+            for (const [viewerWs, state] of dashboardViewers.entries()) {
+                if (state.watchedDeviceId === deviceId && viewerWs.readyState === WebSocket.OPEN) {
+                    viewerWs.send(message);
                 }
             }
         }
@@ -151,8 +239,11 @@ function handleDeviceConnection(ws) {
         const device = devices.get(deviceId);
         if (device) {
             device.status = 'offline';
+            device.lastOfflineTime = Date.now();
+            savePersistedDevices();
             broadcastDeviceList(); // Notify dashboards that device went offline
         }
+        console.log(`[DEVICE WS] Device disconnected: ${deviceId}`);
     });
     
     ws.on('error', (err) => {
