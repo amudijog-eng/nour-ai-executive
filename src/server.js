@@ -63,7 +63,7 @@ server.listen(PORT, () => {
 📲 نقطة إرسال رمز التحقق:      POST http://localhost:${PORT}/api/otp/send
 🔗 نقطة الـ Webhook لميتا:      http://localhost:${PORT}/webhook
 ⚙️  نظام قاعدة البيانات:        SQLite (محلي مدمج)
-🤖 وضع السكرتيرة الذكية (نور):  معطّل (send-only OTP mode)
+🤖 وضع السكرتيرة الذكية (نور):  مفعّل (Cloudflare Workers AI - Llama 3.1)
 =====================================================
   `);
 });

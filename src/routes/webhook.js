@@ -2,10 +2,7 @@ const express = require('express');
 const router = express.Router();
 const dbService = require('../db/database');
 const metaService = require('../services/metaService');
-// Nour's conversational AI agent is disabled: this system is now a send-only
-// WhatsApp OTP service for the Sanad Taxi app. Incoming messages are logged
-// only, no auto-reply is generated. (See src/ai-engine/agentBrain.js and
-// src/core/agent/agentLoop.js if this ever needs to be reactivated.)
+const cloudflareAi = require('../services/cloudflareAi');
 
 const AHMAD_PHONE = '962782932611';
 
@@ -105,9 +102,35 @@ module.exports = (io) => {
       // Mark as read on Meta
       metaService.markAsRead(messageId).catch(() => {});
 
-      // Nour's AI agent no longer processes or replies to incoming messages.
-      // This service only sends outbound OTP codes (see src/routes/otpRoutes.js);
-      // incoming messages are simply logged above for the dashboard to display.
+      // 2. Generate Intelligent Reply via Cloudflare Workers AI
+      console.log(`🤖 [Webhook] Processing message via Cloudflare Workers AI for ${fromPhone}...`);
+      const replyText = await cloudflareAi.generateReply({
+        fromPhone,
+        senderName,
+        incomingText: text
+      });
+
+      if (replyText) {
+        console.log(`📤 [Sending WhatsApp Reply] To ${fromPhone}: "${replyText.slice(0, 60)}..."`);
+        try {
+          const sendRes = await metaService.sendTextMessage(fromPhone, replyText);
+          const savedReply = dbService.saveMessage({
+            messageId: sendRes?.messageId || 'out_' + Date.now(),
+            phone: fromPhone,
+            direction: 'outgoing',
+            text: replyText,
+            type: 'text',
+            status: 'sent'
+          });
+
+          io.emit('new_message', {
+            contact: dbService.getContact(fromPhone),
+            message: savedReply
+          });
+        } catch (sendErr) {
+          console.error(`❌ [Failed to send WhatsApp reply] To ${fromPhone}:`, sendErr.message);
+        }
+      }
 
     } catch (err) {
       console.error('[Webhook Processing Error]:', err);
