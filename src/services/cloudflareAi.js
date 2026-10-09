@@ -21,7 +21,7 @@ class CloudflareAiService {
   }
 
   /**
-   * Helper to call Cloudflare Workers AI with fallback
+   * Helper to call Cloudflare Workers AI with fallback and strict low temperature
    */
   async callCloudflare(messages, expectJson = false) {
     const { accountId, apiToken } = this.getConfig();
@@ -36,13 +36,17 @@ class CloudflareAiService {
         const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
         const res = await axios.post(
           url,
-          { messages },
+          {
+            messages,
+            temperature: 0.1,
+            max_tokens: 350
+          },
           {
             headers: {
               Authorization: `Bearer ${apiToken}`,
               'Content-Type': 'application/json'
             },
-            timeout: 12000
+            timeout: 15000
           }
         );
 
@@ -85,29 +89,29 @@ class CloudflareAiService {
     const isOwner = cleanPhone === AHMAD_PHONE || cleanPhone === '0782932611';
 
     // =========================================================================
-    // 1. OWNER FLOW (Ahmad Alamoudi - Intelligent Executive Agent)
+    // 1. OWNER FLOW (Ahmad Alamoudi - Intelligent Executive Agent "Nashmi")
     // =========================================================================
     if (isOwner) {
-      console.log(`👑 [Cloudflare Agent] Ahmad instruction: "${incomingText}"`);
+      console.log(`👑 [Nashmi Agent] Ahmad instruction: "${incomingText}"`);
 
       const analyzePrompt = `
-أنتِ العقل التنفيذي والذكي للسكرتيرة "نور" الخاصة بالأستاذ أحمد العامودي.
-الأستاذ أحمد هو صاحب العمل الوحيد الذي يملك صلاحية توجيه المهام والاستفسار عن السجلات.
-يفهم نظامك اللغة الطبيعية بدون أوامر ثابتة وبدون أي قيود جامدة.
+أنت "نشمي"، المساعد الشخصي والتنفيذي الذكي للأستاذ أحمد العامودي.
+الأستاذ أحمد هو صاحب العمل والمدير الوحيد. يفهم نظامك أي كلام طبيعي بدون أوامر ثابتة وبدون هلوسة.
 
-المطلوب:
-افهمي قصد الأستاذ أحمد بدقة وحددي الإجراء المطلوب بصيغة JSON فقط:
-1. SEND_MESSAGE: إذا طلب إرسال رسالة أو التواصل أو إبلاغ رقم أو شخص بأمر ما.
-2. QUERY_HISTORY: إذا استفسر عما قاله شخص أو رقم، أو سأل عن محادثات سابقة، أو سأل "شو حكى معك؟" أو "شو وصلك منه؟".
-3. CONVERSATION: إذا كان كلامه تحية، سؤال عام، دردشة عادية، استشارة، أو نقاش.
+قواعد صارمة ضد الهلوسة:
+1. ممنوع نهائياً اختراع أو تأليف أي أسماء، أحداث، أو معلومات غير واردة في رسالة الأستاذ أحمد.
+2. حلل رسالته بدقة وحدد الإجراء بصيغة JSON فقط:
+   - SEND_MESSAGE: إذا طلب إرسال رسالة أو التواصل أو إبلاغ شخص أو رقم بأمر ما.
+   - QUERY_HISTORY: إذا استفسر عما قاله شخص أو رقم، أو سأل "شو حكى معك؟" أو "شو وصلك منه؟".
+   - CONVERSATION: إذا كان كلامه تحية، سؤال عام، دردشة عادية، استشارة، أو نقاش.
 
-الصيغة المطلوبة JSON فقط:
+الصيغة المطلوبة JSON فقط بدون أي نص خارجها:
 {
   "action": "SEND_MESSAGE" | "QUERY_HISTORY" | "CONVERSATION",
   "targetPhone": "رقم الهاتف إن وجد في النص أو null",
   "targetName": "اسم الشخص أو الجهة إن ذكرت أو null",
-  "messageToSend": "نص الرسالة المطلوب إرسالها للطرف الآخر أو null",
-  "reply": "ردك الطبيعي واللبق للأستاذ أحمد باللهجة الأردنية اللطيفة إن كان حواراً عادياً"
+  "messageToSend": "نص الرسالة المطلوب إرسالها للطرف الآخر بدقة وبدون زيادة أو null",
+  "reply": "ردك الطبيعي واللبق للأستاذ أحمد باللهجة الأردنية اللطيفة بصفة نشمي إن كان حواراً عادياً"
 }
 `;
 
@@ -119,7 +123,7 @@ class CloudflareAiService {
       // --- CASE A: Action to Send a WhatsApp Message to Another Person ---
       if (decision && decision.action === 'SEND_MESSAGE') {
         let targetPhone = decision.targetPhone ? authentication.normalizePhone(decision.targetPhone) : null;
-        
+
         // If phone wasn't extracted directly, try resolving name
         if (!targetPhone && decision.targetName) {
           try {
@@ -137,12 +141,12 @@ class CloudflareAiService {
         }
 
         if (!msgToSend) {
-          return `أبشر أستاذ أحمد! شيكت على الرقم (${targetPhone})، بس شو الرسالة اللي حابب أكتب له إياها؟ 🌸`;
+          return `أبشر أستاذ أحمد! شيكت على الرقم (${targetPhone})، بس شو نص الرسالة اللي حابب أكتب له إياها؟ 🌸`;
         }
 
         // Dispatch outbound WhatsApp message
         try {
-          console.log(`📤 [Agent Dispatch] Sending WhatsApp to ${targetPhone}: "${msgToSend}"`);
+          console.log(`📤 [Nashmi Dispatch] Sending WhatsApp to ${targetPhone}: "${msgToSend}"`);
           const sendRes = await metaService.sendTextMessage(targetPhone, msgToSend);
           dbService.saveMessage({
             messageId: sendRes?.messageId || 'out_' + Date.now(),
@@ -153,7 +157,7 @@ class CloudflareAiService {
             status: 'sent'
           });
 
-          return `أبشر أستاذ أحمد، من عيوني الثنتين! بعثت الرسالة فوراً للرقم (${targetPhone}):
+          return `أبشر أستاذ أحمد، من عيوني الثنتين! أخوك نشمي بعث الرسالة فوراً للرقم (${targetPhone}):
 "${msgToSend}" 👍`;
         } catch (err) {
           console.error('❌ Failed to dispatch message:', err.message);
@@ -182,22 +186,23 @@ class CloudflareAiService {
 
         const messages = dbService.getMessages(targetPhone, 15);
         if (!messages || messages.length === 0) {
-          return `أستاذ أحمد، شيكتلك على الرقم (${targetPhone}) وما في أي رسائل سابقة مسجلة عندي معه بالسجل 🌸`;
+          return `أستاذ أحمد، شيكتلك على السجل للرقم (${targetPhone})، وما في أي رسائل سابقة مسجلة عندي معه 🌸`;
         }
 
-        // Summarize history via Cloudflare AI
-        const historyText = messages.map(m => `[${m.created_at}] [${m.direction === 'incoming' ? (displayName || 'الطرف الآخر') : 'نور السكرتيرة'}]: ${m.text}`).join('\n');
+        // Summarize history via Cloudflare AI strictly based on retrieved messages
+        const historyText = messages.map(m => `[${m.created_at}] [${m.direction === 'incoming' ? (displayName || 'الطرف الآخر') : 'نشمي المساعد'}]: ${m.text}`).join('\n');
         const summarizePrompt = `
-أنتِ "نور"، السكرتيرة التنفيذية للأستاذ أحمد العامودي.
+أنت "نشمي"، المساعد التنفيذي للأستاذ أحمد العامودي.
 يسألك الأستاذ أحمد عما دار بيننا وبين (${displayName || targetPhone}).
-هذا سجل المحادثة الحقيقي من قاعدة البيانات:
+هذا سجل المحادثة الحقيقي المسترجع من قاعدة البيانات:
 ${historyText}
 
-المطلوب:
-لخصي للأستاذ أحمد باختصار ودقة وذكاء بلهجة أردنية لبقة:
-1. ما دار بينكم ومتى كان آخر تواصل.
-2. ما هو آخر موقف واضح أو آخر ما تم الاتفاق عليه أو طلبه.
-3. كوني دقيقة جداً وصريحة ولا تخترعي تفاصيل ليست بالسجل.
+قواعد صارمة ضد الهلوسة:
+1. التزم 100% فقط بالنصوص والتواريخ المذكورة بالسجل أعلاه، وممنوع منعاً باتاً اختراع أي وقائع أو تفاصيل ليست في السجل.
+2. لخص للأستاذ أحمد باختصار ودقة وصدق بلهجة أردنية لبقة:
+   - متى كان آخر تواصل وماذا قال الطرف الآخر.
+   - هل هو بانتظار رد أم أن الموضوع منتهٍ.
+3. إذا كان السجل قصيراً أو لا يحتوي على تفاصيل كافية، قل له ما هو موجود فقط بكل أمانة.
 `;
 
         const summary = await this.callCloudflare([
@@ -215,12 +220,17 @@ ${historyText}
         return decision.reply;
       }
 
-      // Fallback conversation prompt with history
+      // Grounded conversation prompt with history
       const history = dbService.getRecentContext ? dbService.getRecentContext(cleanPhone, 4) : [];
       const messages = [
         {
           role: 'system',
-          content: `أنتِ "نور"، السكرتيرة والمساعدة التنفيذية الذكية للأستاذ أحمد العامودي. تحدثي بلهجة أردنية عفوية، لبقة، محترمة، وذكية كإنسان حقيقي (يا هلا والله أستاذ أحمد، أبشر، تكرم عينك، من عيوني، كيف بقدر أخدمك اليوم؟). كوني مساعدة طبيعية ومباشرة.`
+          content: `أنت "نشمي"، المساعد الشخصي والتنفيذي الذكي للأستاذ أحمد العامودي (مكتب وسفريات سند تاكسي والأعمال).
+أسلوبك: رجل أردني شهم، لبق، صادق، ومخلص جداً (يا هلا والله أستاذ أحمد، أبشر، تكرم عينك، من عيوني الثنتين، أمرك أستاذي).
+قواعد صارمة ضد الهلوسة:
+1. أنت مساعد تنفيذي ومكتب وعمل، ولست نشرة أخبار عامة؛ لا تخترع أخباراً سياسية أو معلومات عامة من خيالك.
+2. إذا سألك أحمد "شو الأخبار" أو "كيف الأمور": قل له ببساطة إن كل أمور المكتب والعمل تمام والحمد لله، وأنا بانتظار توجيهاتك وأوامرك.
+3. كن دقيقاً، صادقاً، ومباشراً بدون فلسفة أو مبالغة.`
         }
       ];
 
@@ -233,18 +243,23 @@ ${historyText}
       const reply = await this.callCloudflare(messages, false);
       if (reply) return reply;
 
-      return `يا هلا والله أستاذ أحمد 🌸 معك وسامعتك، شو حابب نرتب أو ننجز هسا؟`;
+      return `يا هلا والله أستاذ أحمد 🌸 أخوك نشمي معك وسامعك، شو حابب نرتب أو ننجز هسا؟`;
     }
 
     // =========================================================================
-    // 2. EXTERNAL VISITOR / CLIENT FLOW
+    // 2. EXTERNAL VISITOR / CLIENT FLOW (Sanad Taxi & Office Support)
     // =========================================================================
-    console.log(`👤 [Cloudflare Client] Message from ${fromPhone} (${senderName}): "${incomingText}"`);
+    console.log(`👤 [Nashmi Client] Message from ${fromPhone} (${senderName}): "${incomingText}"`);
     const history = dbService.getRecentContext ? dbService.getRecentContext(cleanPhone, 4) : [];
     const messages = [
       {
         role: 'system',
-        content: `أنتِ "نور"، مساعدة وروبوت في مكتب الأستاذ أحمد العامودي (سند تاكسي والخدمات). تحدثي بلهجة أردنية محترمة، لطيفة، ومباشرة (يا هلا بحضرتك، أهلاً وسهلاً، تكرم، تفضل كيف بقدر أخدمك اليوم؟). ساعدي السائل بأدب واختصار ووضوح.`
+        content: `أنت "نشمي"، مساعد وممثل خدمة العملاء في مكتب وسفريات الأستاذ أحمد العامودي (سند تاكسي).
+أسلوبك: شهم ومهذب، بلهجة أردنية لطيفة (يا هلا بحضرتك، أهلاً وسهلاً، تكرم، تفضل كيف بقدر أخدمك اليوم؟).
+قواعد صارمة ضد الهلوسة:
+1. ممنوع نهائياً اختراع أسماء شركات وهمية أو أسماء أشخاص أو سائقين أو أسعار من عندك.
+2. إذا طلب العميل تكسي أو توصيل، رحب به واطلب منه تحديد: مكان الانطلاق، الوجهة، والوقت المطلوب لترتيب الحجز له.
+3. كن صادقاً وواضحاً ومباشراً بدون فلسفة.`
       }
     ];
 
@@ -257,7 +272,7 @@ ${historyText}
     const reply = await this.callCloudflare(messages, false);
     if (reply) return reply;
 
-    return `أهلاً وسهلاً بحضرتك في مكتب الأستاذ أحمد العامودي 🌸 تفضل كيف بقدر أساعدك وأخدمك اليوم؟`;
+    return `أهلاً وسهلاً بحضرتك في مكتب وسفريات الأستاذ أحمد العامودي 🌸 تفضل كيف بقدر أساعدك وأخدمك اليوم؟`;
   }
 }
 

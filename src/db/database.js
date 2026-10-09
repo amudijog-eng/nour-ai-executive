@@ -208,7 +208,7 @@ const initSetting = (key, defaultValue) => {
 };
 
 initSetting('ai_secretary_enabled', 'true');
-initSetting('ai_secretary_name', 'نور (السكرتيرة الذكية)');
+initSetting('ai_secretary_name', 'نشمي (المساعد الذكي)');
 
 const dbService = {
   // Contacts
