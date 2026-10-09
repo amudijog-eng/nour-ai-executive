@@ -21,6 +21,26 @@ class CloudflareAiService {
   }
 
   /**
+   * Helper to extract valid phone numbers from any Arabic text format
+   */
+  extractPhoneNumbers(text) {
+    if (!text) return [];
+    const clean = text.replace(/[\u200E\u200F\u202A-\u202E\u00A0\u200B-\u200D\uFEFF]/g, ' ');
+    const candidates = clean.match(/(?:\+?[0-9][0-9\s\-]{8,18}[0-9])/g) || [];
+    const normalized = [];
+    for (const c of candidates) {
+      const digits = c.replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) {
+        const norm = authentication.normalizePhone(digits);
+        if (norm && norm !== AHMAD_PHONE) {
+          normalized.push(norm);
+        }
+      }
+    }
+    return [...new Set(normalized)];
+  }
+
+  /**
    * Helper to call Cloudflare Workers AI with fallback and strict low temperature
    */
   async callCloudflare(messages, expectJson = false) {
@@ -39,7 +59,7 @@ class CloudflareAiService {
           {
             messages,
             temperature: 0.1,
-            max_tokens: 350
+            max_tokens: 300
           },
           {
             headers: {
@@ -94,59 +114,73 @@ class CloudflareAiService {
     if (isOwner) {
       console.log(`👑 [Nashmi Agent] Ahmad instruction: "${incomingText}"`);
 
-      const analyzePrompt = `
-أنت "نشمي"، المساعد الشخصي والتنفيذي الذكي للأستاذ أحمد العامودي.
-الأستاذ أحمد هو صاحب العمل والمدير الوحيد. يفهم نظامك أي كلام طبيعي بدون أوامر ثابتة وبدون هلوسة.
+      // A. Extract phone numbers from Ahmad's message
+      const extractedPhones = this.extractPhoneNumbers(incomingText);
+
+      // --- CASE 1: A specific phone number was mentioned ---
+      if (extractedPhones.length > 0) {
+        const targetPhone = extractedPhones[0];
+
+        // Check if Ahmad is inquiring about conversation history
+        const isHistoryQuery = /(?:شو حكى|شو قال|شو حكيت|شو في بينك|شو صار معه|وين وصلت|شو بعث|شو رده|شو رد|تاريخ|سجل|محادثات)/iu.test(incomingText);
+        if (isHistoryQuery) {
+          console.log(`🔍 [Nashmi Query] Checking DB history for: ${targetPhone}`);
+          const messages = dbService.getMessages(targetPhone, 15);
+          if (!messages || messages.length === 0) {
+            return `أستاذ أحمد، شيكتلك على السجل للرقم (${targetPhone})، وما في أي رسائل مسجلة عندي معه بالسيستم نهائياً 🌸`;
+          }
+
+          const historyText = messages.map(m => `[${m.created_at}] [${m.direction === 'incoming' ? 'الطرف الآخر' : 'نشمي'}] : ${m.text}`).join('\n');
+          const summarizePrompt = `
+أنت "نشمي"، المساعد التنفيذي للأستاذ أحمد العامودي.
+يسألك الأستاذ أحمد عما دار بيننا وبين الرقم (${targetPhone}).
+هذا سجل المحادثة الحقيقي من قاعدة البيانات:
+${historyText}
 
 قواعد صارمة ضد الهلوسة:
-1. ممنوع نهائياً اختراع أو تأليف أي أسماء، أحداث، أو معلومات غير واردة في رسالة الأستاذ أحمد.
-2. حلل رسالته بدقة وحدد الإجراء بصيغة JSON فقط:
-   - SEND_MESSAGE: إذا طلب إرسال رسالة أو التواصل أو إبلاغ شخص أو رقم بأمر ما.
-   - QUERY_HISTORY: إذا استفسر عما قاله شخص أو رقم، أو سأل "شو حكى معك؟" أو "شو وصلك منه؟".
-   - CONVERSATION: إذا كان كلامه تحية، سؤال عام، دردشة عادية، استشارة، أو نقاش.
-
-الصيغة المطلوبة JSON فقط بدون أي نص خارجها:
-{
-  "action": "SEND_MESSAGE" | "QUERY_HISTORY" | "CONVERSATION",
-  "targetPhone": "رقم الهاتف إن وجد في النص أو null",
-  "targetName": "اسم الشخص أو الجهة إن ذكرت أو null",
-  "messageToSend": "نص الرسالة المطلوب إرسالها للطرف الآخر بدقة وبدون زيادة أو null",
-  "reply": "ردك الطبيعي واللبق للأستاذ أحمد باللهجة الأردنية اللطيفة بصفة نشمي إن كان حواراً عادياً"
-}
+1. التزم 100% فقط بالنصوص والتواريخ المذكورة بالسجل أعلاه، وممنوع نهائياً اختراع أي تفاصيل خارج السجل.
+2. لخص للأستاذ أحمد باختصار ودقة وصدق بلهجة أردنية لبقة:
+   - متى كان آخر تواصل وماذا قال الطرف الآخر.
+   - هل هو بانتظار رد أم لا.
 `;
 
-      const decision = await this.callCloudflare([
-        { role: 'system', content: analyzePrompt },
-        { role: 'user', content: incomingText }
-      ], true);
+          const summary = await this.callCloudflare([
+            { role: 'system', content: summarizePrompt },
+            { role: 'user', content: incomingText }
+          ], false);
 
-      // --- CASE A: Action to Send a WhatsApp Message to Another Person ---
-      if (decision && decision.action === 'SEND_MESSAGE') {
-        let targetPhone = decision.targetPhone ? authentication.normalizePhone(decision.targetPhone) : null;
-
-        // If phone wasn't extracted directly, try resolving name
-        if (!targetPhone && decision.targetName) {
-          try {
-            const resolved = await identityResolver.resolve(decision.targetName);
-            if (resolved && resolved.phone && resolved.phone !== AHMAD_PHONE) {
-              targetPhone = resolved.phone;
-            }
-          } catch (_) {}
+          return summary || `أستاذ أحمد، شيكتلك على السجل للرقم (${targetPhone}). في ${messages.length} رسالة مسجلة، وآخر رسالة كانت: "${messages[messages.length - 1].text.slice(0, 60)}" 👍`;
         }
 
-        const msgToSend = decision.messageToSend;
+        // Otherwise: Ahmad is giving an active command to CONTACT this number (Meeting, Dinner, Message, Errand)!
+        console.log(`🚀 [Nashmi Action] Executing outbound contact to: ${targetPhone}`);
 
-        if (!targetPhone) {
-          return `أبشر أستاذ أحمد، من عيوني! بس يا ريت تبلغني برقم الهاتف اللي حابب أبعث له الرسالة 🌸`;
+        // Craft courteous message on behalf of Mr. Ahmad Alamoudi
+        const craftPrompt = `
+أنت "نشمي"، المساعد الشخصي للأستاذ أحمد العامودي.
+طلب منك الأستاذ أحمد التواصل مع طرف آخر بهذه التعليمات:
+"${incomingText}"
+
+المطلوب:
+اكتب نص الرسالة التي ستُرسل لهذا الطرف عبر واتساب نيابة عن مكتب وسفريات الأستاذ أحمد العامودي بلهجة أردنية مهذبة ومباشرة.
+(مثال: مرحباً بك، يتواصل معك مكتب الأستاذ أحمد العامودي...).
+اكتب فقط نص الرسالة التي ستُرسل إليه بدون أي كلام خارجي أو مقدمات.
+`;
+
+        let msgToSend = await this.callCloudflare([
+          { role: 'user', content: craftPrompt }
+        ], false);
+
+        if (!msgToSend || msgToSend.length < 5) {
+          msgToSend = `مرحباً بك 🌸 يتواصل معك مكتب وسفريات الأستاذ أحمد العامودي بخصوص: ${incomingText}`;
         }
 
-        if (!msgToSend) {
-          return `أبشر أستاذ أحمد! شيكت على الرقم (${targetPhone})، بس شو نص الرسالة اللي حابب أكتب له إياها؟ 🌸`;
-        }
+        // Clean up quotes
+        msgToSend = msgToSend.replace(/^["']|["']$/g, '').trim();
 
-        // Dispatch outbound WhatsApp message
+        // ACTUALLY DISPATCH WHATSAPP MESSAGE
         try {
-          console.log(`📤 [Nashmi Dispatch] Sending WhatsApp to ${targetPhone}: "${msgToSend}"`);
+          console.log(`📤 [Meta Dispatch] Sending to ${targetPhone}: "${msgToSend}"`);
           const sendRes = await metaService.sendTextMessage(targetPhone, msgToSend);
           dbService.saveMessage({
             messageId: sendRes?.messageId || 'out_' + Date.now(),
@@ -157,122 +191,73 @@ class CloudflareAiService {
             status: 'sent'
           });
 
-          return `أبشر أستاذ أحمد، من عيوني الثنتين! أخوك نشمي بعث الرسالة فوراً للرقم (${targetPhone}):
-"${msgToSend}" 👍`;
+          // Record task in agent_tasks
+          try {
+            const taskCode = 'TASK_' + Date.now();
+            dbService.createTask?.({
+              taskCode,
+              requesterPhone: AHMAD_PHONE,
+              targetPhone,
+              instruction: incomingText,
+              lastAgentMessage: msgToSend
+            });
+          } catch (_) {}
+
+          return `أبشر أستاذ أحمد، من عيوني الثنتين! أخوك نشمي تواصل فوراً مع الرقم (${targetPhone}) وبعثت له:
+
+"${msgToSend}"
+
+وأول ما يرد علي رح أرجعلك بكل التفاصيل فوراً 👍`;
         } catch (err) {
-          console.error('❌ Failed to dispatch message:', err.message);
+          console.error(`❌ [Meta Send Error] To ${targetPhone}:`, err.message);
           return `أستاذ أحمد، حاولت أبعث للرقم (${targetPhone}) بس طلع خطأ في الإرسال: ${err.message}`;
         }
       }
 
-      // --- CASE B: Action to Query Conversation History with a Person/Number ---
-      if (decision && decision.action === 'QUERY_HISTORY') {
-        let targetPhone = decision.targetPhone ? authentication.normalizePhone(decision.targetPhone) : null;
-        let displayName = decision.targetName || targetPhone;
-
-        if (!targetPhone && decision.targetName) {
-          try {
-            const resolved = await identityResolver.resolve(decision.targetName);
-            if (resolved && resolved.phone && resolved.phone !== AHMAD_PHONE) {
-              targetPhone = resolved.phone;
-              displayName = resolved.name || decision.targetName;
-            }
-          } catch (_) {}
-        }
-
-        if (!targetPhone) {
-          return `يا هلا أستاذ أحمد. عن أي رقم أو شخص حابب أشيكلك على محادثاته؟ يا ريت تذكرلي اسمه أو رقمه 🌸`;
-        }
-
-        const messages = dbService.getMessages(targetPhone, 15);
-        if (!messages || messages.length === 0) {
-          return `أستاذ أحمد، شيكتلك على السجل للرقم (${targetPhone})، وما في أي رسائل سابقة مسجلة عندي معه 🌸`;
-        }
-
-        // Summarize history via Cloudflare AI strictly based on retrieved messages
-        const historyText = messages.map(m => `[${m.created_at}] [${m.direction === 'incoming' ? (displayName || 'الطرف الآخر') : 'نشمي المساعد'}]: ${m.text}`).join('\n');
-        const summarizePrompt = `
-أنت "نشمي"، المساعد التنفيذي للأستاذ أحمد العامودي.
-يسألك الأستاذ أحمد عما دار بيننا وبين (${displayName || targetPhone}).
-هذا سجل المحادثة الحقيقي المسترجع من قاعدة البيانات:
-${historyText}
-
-قواعد صارمة ضد الهلوسة:
-1. التزم 100% فقط بالنصوص والتواريخ المذكورة بالسجل أعلاه، وممنوع منعاً باتاً اختراع أي وقائع أو تفاصيل ليست في السجل.
-2. لخص للأستاذ أحمد باختصار ودقة وصدق بلهجة أردنية لبقة:
-   - متى كان آخر تواصل وماذا قال الطرف الآخر.
-   - هل هو بانتظار رد أم أن الموضوع منتهٍ.
-3. إذا كان السجل قصيراً أو لا يحتوي على تفاصيل كافية، قل له ما هو موجود فقط بكل أمانة.
-`;
-
-        const summary = await this.callCloudflare([
-          { role: 'system', content: summarizePrompt },
-          { role: 'user', content: incomingText }
-        ], false);
-
-        if (summary) return summary;
-
-        return `أستاذ أحمد، شيكتلك على سجل (${displayName || targetPhone}). في ${messages.length} رسالة مسجلة، وآخر رسالة كانت: "${messages[messages.length - 1].text.slice(0, 70)}" 👍`;
+      // --- CASE 2: Check if Ahmad mentioned an action to send without a phone number ---
+      const wantsToSend = /(?:احكي مع|تواصل مع|ابعث|ارسل|رتب|نسق)\s+/iu.test(incomingText);
+      if (wantsToSend && extractedPhones.length === 0) {
+        return `أبشر أستاذ أحمد، من عيوني الثنتين! بس يا ريت تبعثلي رقم الهاتف اللي حابب أتواصل معه وأرتب الموضوع 🌸`;
       }
 
-      // --- CASE C: Normal Dialogue & Executive Consultation ---
-      if (decision && decision.reply) {
-        return decision.reply;
-      }
-
-      // Grounded conversation prompt with history
-      const history = dbService.getRecentContext ? dbService.getRecentContext(cleanPhone, 4) : [];
-      const messages = [
-        {
-          role: 'system',
-          content: `أنت "نشمي"، المساعد الشخصي والتنفيذي الذكي للأستاذ أحمد العامودي (مكتب وسفريات سند تاكسي والأعمال).
+      // --- CASE 3: General Executive Conversation ---
+      const chatPrompt = `
+أنت "نشمي"، المساعد الشخصي والتنفيذي الذكي للأستاذ أحمد العامودي (مكتب وسفريات سند تاكسي والأعمال).
 أسلوبك: رجل أردني شهم، لبق، صادق، ومخلص جداً (يا هلا والله أستاذ أحمد، أبشر، تكرم عينك، من عيوني الثنتين، أمرك أستاذي).
 قواعد صارمة ضد الهلوسة:
-1. أنت مساعد تنفيذي ومكتب وعمل، ولست نشرة أخبار عامة؛ لا تخترع أخباراً سياسية أو معلومات عامة من خيالك.
+1. أنت مساعد تنفيذي ومكتب عمل؛ أجب بصدق واختصار وواقعية، وممنوع نهائياً اختراع أي أحداث أو وقائع أو معلومات من خيالك.
 2. إذا سألك أحمد "شو الأخبار" أو "كيف الأمور": قل له ببساطة إن كل أمور المكتب والعمل تمام والحمد لله، وأنا بانتظار توجيهاتك وأوامرك.
-3. كن دقيقاً، صادقاً، ومباشراً بدون فلسفة أو مبالغة.`
-        }
-      ];
+3. كن دقيقاً ومباشراً بدون فلسفة أو مبالغة.
+`;
 
-      for (const h of history) {
-        if (h.direction === 'incoming') messages.push({ role: 'user', content: h.text || '' });
-        else if (h.direction === 'outgoing') messages.push({ role: 'assistant', content: h.text || '' });
-      }
-      messages.push({ role: 'user', content: incomingText });
+      const reply = await this.callCloudflare([
+        { role: 'system', content: chatPrompt },
+        { role: 'user', content: incomingText }
+      ], false);
 
-      const reply = await this.callCloudflare(messages, false);
-      if (reply) return reply;
-
-      return `يا هلا والله أستاذ أحمد 🌸 أخوك نشمي معك وسامعك، شو حابب نرتب أو ننجز هسا؟`;
+      return reply || `يا هلا والله أستاذ أحمد 🌸 أخوك نشمي معك وسامعك، شو حابب نرتب أو ننجز هسا؟`;
     }
 
     // =========================================================================
     // 2. EXTERNAL VISITOR / CLIENT FLOW (Sanad Taxi & Office Support)
     // =========================================================================
     console.log(`👤 [Nashmi Client] Message from ${fromPhone} (${senderName}): "${incomingText}"`);
-    const history = dbService.getRecentContext ? dbService.getRecentContext(cleanPhone, 4) : [];
-    const messages = [
-      {
-        role: 'system',
-        content: `أنت "نشمي"، مساعد وممثل خدمة العملاء في مكتب وسفريات الأستاذ أحمد العامودي (سند تاكسي).
-أسلوبك: شهم ومهذب، بلهجة أردنية لطيفة (يا هلا بحضرتك، أهلاً وسهلاً، تكرم، تفضل كيف بقدر أخدمك اليوم؟).
+
+    const clientPrompt = `
+أنت "نشمي"، مساعد وممثل خدمة العملاء في مكتب وسفريات الأستاذ أحمد العامودي (سند تاكسي).
+أسلوبك: رجل أردني شهم ومهذب، بلهجة أردنية لطيفة ومحترمة (يا هلا بحضرتك، أهلاً وسهلاً، تكرم، تفضل كيف بقدر أخدمك اليوم؟).
 قواعد صارمة ضد الهلوسة:
-1. ممنوع نهائياً اختراع أسماء شركات وهمية أو أسماء أشخاص أو سائقين أو أسعار من عندك.
-2. إذا طلب العميل تكسي أو توصيل، رحب به واطلب منه تحديد: مكان الانطلاق، الوجهة، والوقت المطلوب لترتيب الحجز له.
-3. كن صادقاً وواضحاً ومباشراً بدون فلسفة.`
-      }
-    ];
+1. ممنوع نهائياً اختراع أسماء شركات وهمية أو أسماء سائقين أو أسعار من عندك.
+2. إذا طلب العميل تكسي أو خدمة توصيل، رحب به واطلب منه تحديد: مكان الانطلاق، الوجهة، والوقت المطلوب لترتيب الحجز له.
+3. كن صادقاً وواضحاً ومباشراً بدون فلسفة.
+`;
 
-    for (const h of history) {
-      if (h.direction === 'incoming') messages.push({ role: 'user', content: h.text || '' });
-      else if (h.direction === 'outgoing') messages.push({ role: 'assistant', content: h.text || '' });
-    }
-    messages.push({ role: 'user', content: incomingText });
+    const reply = await this.callCloudflare([
+      { role: 'system', content: clientPrompt },
+      { role: 'user', content: incomingText }
+    ], false);
 
-    const reply = await this.callCloudflare(messages, false);
-    if (reply) return reply;
-
-    return `أهلاً وسهلاً بحضرتك في مكتب وسفريات الأستاذ أحمد العامودي 🌸 تفضل كيف بقدر أساعدك وأخدمك اليوم؟`;
+    return reply || `أهلاً وسهلاً بحضرتك في مكتب وسفريات الأستاذ أحمد العامودي 🌸 تفضل كيف بقدر أساعدك وأخدمك اليوم؟`;
   }
 }
 

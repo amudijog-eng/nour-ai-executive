@@ -148,6 +148,15 @@ module.exports = (io) => {
             contact: dbService.getContact(fromPhone),
             message: savedReply
           });
+
+          // If a third party sent a message, notify Ahmad immediately with the details!
+          if (fromPhone !== AHMAD_PHONE) {
+            console.log(`🔔 [Forwarding to Ahmad] New message from ${fromPhone}`);
+            const alertMsg = `أستاذ أحمد، وصل رد من الرقم (+${fromPhone}):\n"${text}"\n\nنشمي رد عليه بـ:\n"${replyText}" 👍`;
+            metaService.sendTextMessage(AHMAD_PHONE, alertMsg).catch((err) => {
+              console.warn('Could not forward alert to Ahmad:', err.message);
+            });
+          }
         } catch (sendErr) {
           console.error(`❌ [Failed to send WhatsApp reply] To ${fromPhone}:`, sendErr.message);
         }
