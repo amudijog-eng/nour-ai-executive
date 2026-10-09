@@ -3,6 +3,7 @@ const router = express.Router();
 const dbService = require('../db/database');
 const metaService = require('../services/metaService');
 const cloudflareAi = require('../services/cloudflareAi');
+const voiceService = require('../services/voiceService');
 
 const AHMAD_PHONE = '962782932611';
 
@@ -102,8 +103,11 @@ module.exports = (io) => {
       // Mark as read on Meta
       metaService.markAsRead(messageId).catch(() => {});
 
-      // 2. Generate Intelligent Reply via Cloudflare Workers AI
-      console.log(`🤖 [Webhook] Processing message via Cloudflare Workers AI for ${fromPhone}...`);
+      // 2. Check if voice response was requested (audio message or text asking for voice)
+      const wantsVoice = voiceService.isVoiceRequested(text, messageType);
+
+      // 3. Generate Intelligent Reply via Cloudflare Workers AI
+      console.log(`🤖 [Webhook] Processing message via Cloudflare Workers AI for ${fromPhone} (wantsVoice: ${wantsVoice})...`);
       const replyText = await cloudflareAi.generateReply({
         fromPhone,
         senderName,
@@ -111,15 +115,32 @@ module.exports = (io) => {
       });
 
       if (replyText) {
-        console.log(`📤 [Sending WhatsApp Reply] To ${fromPhone}: "${replyText.slice(0, 60)}..."`);
         try {
-          const sendRes = await metaService.sendTextMessage(fromPhone, replyText);
+          let sendRes = null;
+          let outType = 'text';
+
+          if (wantsVoice) {
+            console.log(`🎙️ [Voice Synthesis] Converting reply to voice note for ${fromPhone}...`);
+            try {
+              const audioBuffer = await voiceService.textToVoice(replyText);
+              sendRes = await metaService.sendVoiceMessage(fromPhone, audioBuffer);
+              outType = 'audio';
+              console.log(`✅ [Voice Sent] Voice note successfully delivered to ${fromPhone}!`);
+            } catch (voiceErr) {
+              console.warn(`⚠️ [Voice Synthesis Failed, falling back to text]:`, voiceErr.message);
+              sendRes = await metaService.sendTextMessage(fromPhone, replyText);
+            }
+          } else {
+            console.log(`📤 [Sending WhatsApp Reply] To ${fromPhone}: "${replyText.slice(0, 60)}..."`);
+            sendRes = await metaService.sendTextMessage(fromPhone, replyText);
+          }
+
           const savedReply = dbService.saveMessage({
             messageId: sendRes?.messageId || 'out_' + Date.now(),
             phone: fromPhone,
             direction: 'outgoing',
             text: replyText,
-            type: 'text',
+            type: outType,
             status: 'sent'
           });
 

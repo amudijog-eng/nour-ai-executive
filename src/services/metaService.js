@@ -102,6 +102,74 @@ class MetaService {
     }
   }
 
+  /**
+   * Upload audio buffer to Meta media endpoint and send as WhatsApp Voice Note
+   */
+  async sendVoiceMessage(toPhone, audioBuffer) {
+    const { accessToken, phoneNumberId } = this.getConfig();
+    const cleanPhone = toPhone.replace(/\D/g, '');
+
+    if (!accessToken || !phoneNumberId) {
+      console.warn(`[MetaService] Simulated Voice Send to ${cleanPhone}`);
+      return { success: true, simulated: true, messageId: 'sim_audio_' + Date.now() };
+    }
+
+    try {
+      const FormData = require('form-data');
+      const form = new FormData();
+      form.append('file', audioBuffer, {
+        filename: 'voice_note.mp3',
+        contentType: 'audio/mpeg'
+      });
+      form.append('messaging_product', 'whatsapp');
+      form.append('type', 'audio/mpeg');
+
+      const uploadUrl = `https://graph.facebook.com/${META_API_VERSION}/${phoneNumberId}/media`;
+      const uploadRes = await axios.post(uploadUrl, form, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          ...form.getHeaders()
+        },
+        timeout: 25000
+      });
+
+      const mediaId = uploadRes.data?.id;
+      if (!mediaId) throw new Error('Meta media upload did not return an id');
+
+      console.log(`🎙️ [Meta Voice] Audio uploaded to WhatsApp with media ID: ${mediaId}`);
+
+      const sendUrl = `https://graph.facebook.com/${META_API_VERSION}/${phoneNumberId}/messages`;
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: cleanPhone,
+        type: 'audio',
+        audio: {
+          id: mediaId
+        }
+      };
+
+      const sendRes = await axios.post(sendUrl, payload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      });
+
+      const messageId = sendRes.data?.messages?.[0]?.id || 'meta_audio_' + Date.now();
+      return {
+        success: true,
+        messageId,
+        mediaId,
+        data: sendRes.data
+      };
+    } catch (err) {
+      console.error('[MetaService Voice Error]', err.response?.data || err.message);
+      throw new Error(err.response?.data?.error?.message || err.message);
+    }
+  }
+
   async sendTemplateMessage(toPhone, templateName = 'hello_world', languageCode = 'en_US') {
     const { accessToken, phoneNumberId } = this.getConfig();
     const cleanPhone = toPhone.replace(/\D/g, '');
