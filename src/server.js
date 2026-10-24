@@ -481,4 +481,27 @@ function handleDashboardConnection(ws) {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    
+    // --- Render Keep-Alive Anti-Sleep Engine ---
+    // Render free instances sleep after 15 minutes of inactivity.
+    // This job pings the server health endpoint every 10 minutes to stay awake 24/7.
+    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || 'https://nour-ai-executive.onrender.com';
+    const pingTarget = `${keepAliveUrl.replace(/\/$/, '')}/health`;
+    
+    function performKeepAlivePing() {
+        try {
+            const client = pingTarget.startsWith('https') ? require('https') : require('http');
+            client.get(pingTarget, (res) => {
+                console.log(`[KEEP-ALIVE] Ping to ${pingTarget} returned status: ${res.statusCode}`);
+            }).on('error', (err) => {
+                console.log(`[KEEP-ALIVE] Ping failed:`, err.message);
+            });
+        } catch (e) {
+            console.error('[KEEP-ALIVE] Error:', e.message);
+        }
+    }
+    
+    // Run initial ping after 30 seconds, then every 10 minutes (600,000 ms)
+    setTimeout(performKeepAlivePing, 30000);
+    setInterval(performKeepAlivePing, 10 * 60 * 1000);
 });
