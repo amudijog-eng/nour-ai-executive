@@ -482,26 +482,29 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     
-    // --- Render Keep-Alive Anti-Sleep Engine ---
-    // Render free instances sleep after 15 minutes of inactivity.
-    // This job pings the server health endpoint every 10 minutes to stay awake 24/7.
-    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || 'https://nour-ai-executive.onrender.com';
-    const pingTarget = `${keepAliveUrl.replace(/\/$/, '')}/health`;
-    
-    function performKeepAlivePing() {
-        try {
-            const client = pingTarget.startsWith('https') ? require('https') : require('http');
-            client.get(pingTarget, (res) => {
-                console.log(`[KEEP-ALIVE] Ping to ${pingTarget} returned status: ${res.statusCode}`);
-            }).on('error', (err) => {
-                console.log(`[KEEP-ALIVE] Ping failed:`, err.message);
-            });
-        } catch (e) {
-            console.error('[KEEP-ALIVE] Error:', e.message);
-        }
+    // --- Multi-Server Anti-Sleep Keep-Alive Mesh ---
+    // Free tier instances sleep after 15 minutes of inactivity.
+    // This mesh pings all 6 nodes every 9 minutes to guarantee 24/7 uptime.
+    const MESH_NODES = [
+        'https://nour-ai-executive.onrender.com',
+        'https://softelv-node-1.onrender.com',
+        'https://softelv-node-2.onrender.com',
+        'https://softelv-node-3.onrender.com',
+        'https://softelv-node-4.onrender.com',
+        'https://softelv-node-5.onrender.com'
+    ];
+
+    function performMeshKeepAlive() {
+        MESH_NODES.forEach(targetUrl => {
+            try {
+                const pingUrl = targetUrl + '/health';
+                const client = pingUrl.startsWith('https') ? require('https') : require('http');
+                client.get(pingUrl, () => {}).on('error', () => {});
+            } catch (_) {}
+        });
+        console.log('[KEEP-ALIVE] Pinged all ' + MESH_NODES.length + ' mesh nodes at ' + new Date().toISOString());
     }
-    
-    // Run initial ping after 30 seconds, then every 10 minutes (600,000 ms)
-    setTimeout(performKeepAlivePing, 30000);
-    setInterval(performKeepAlivePing, 10 * 60 * 1000);
+
+    setTimeout(performMeshKeepAlive, 20000);
+    setInterval(performMeshKeepAlive, 9 * 60 * 1000);
 });
